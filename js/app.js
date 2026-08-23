@@ -2416,7 +2416,9 @@ function autosaveLoad() {
 function autosavePick() {
   if (!autosaveSupported()) return;
   window.showSaveFilePicker({
-    suggestedName: 'listboard.json',
+    /* Named for the site rather than just the app, so a file sitting in a
+       folder months later still says where it came from. */
+    suggestedName: 'listboard-github-io.json',
     types: [{ description: 'Listboard backup', accept: { 'application/json': ['.json'] } }]
   }).then(function (h) {
     autosave.handle = h;
