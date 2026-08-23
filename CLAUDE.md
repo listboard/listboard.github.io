@@ -127,6 +127,28 @@ Notes on the drop path:
 - A dropped file gives up only its name: browsers do not expose the path,
   and the bytes are far too big for localStorage. The name is the note.
 - URLs skip tag extraction, or a `#fragment` would become a tag.
+## Selection
+Shift-click and ctrl/cmd-click toggle a card into `selection`, an array of
+ids that is board-only and deliberately never persisted: a selection is
+something you are doing right now, not state worth surviving a reload.
+
+- Read it through `selectedTasks()`, never the raw array. A card can leave
+  the board underneath a selection (archived from its panel, project
+  switched), and that helper drops the strays instead of counting ghosts.
+- It clears on Esc, on leaving the Board tab and on switching project, and
+  each of those repaints the board so no card is left wearing a selected
+  ring it no longer has.
+- Dragging a selected card drags the whole selection. `moveMany()` relies on
+  sequential `moveTask()` calls against one anchor preserving order - each
+  card lands immediately above the anchor, so the group arrives in sequence.
+
+## Bulk archiving
+`archiveMany()` is the single path for archiving more than one task, and it
+puts the whole batch behind one undo. There are two entry points with
+deliberately different scope: the Closed lane's **Archive all** takes exactly
+what that lane is showing, filter included, so a filtered board can never
+archive something off screen; Settings takes every closed task in every
+project. Keep that distinction if you touch either.
 
 ## Drag and drop
 Pointer events, not HTML5 drag-and-drop, because the HTML5 API never fires for

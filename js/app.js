@@ -327,6 +327,51 @@ function setStatus(id, status) {
   moveTask(id, status, lane.length ? lane[0].id : null);
 }
 
+/* ── Selection ────────────────────────────────────────────────────────────
+   Shift-click (or ctrl/cmd-click) puts cards in a selection, which the lane
+   buttons and a drag then act on together. It is board-only and deliberately
+   not persisted: a selection is a thing you are doing right now, not state
+   worth surviving a reload. */
+var selection = [];
+
+function isSelected(id) { return selection.indexOf(id) >= 0; }
+
+function toggleSelect(id) {
+  var i = selection.indexOf(id);
+  if (i >= 0) selection.splice(i, 1); else selection.push(id);
+  renderBoard();
+}
+
+function clearSelection(silent) {
+  if (!selection.length) return;
+  selection = [];
+  renderBoard();
+  if (!silent) toast('Selection cleared');
+}
+
+/* Selected tasks that are still on the board. A card can leave underneath a
+   selection (archived from its panel, project switched), so every consumer
+   reads through this rather than trusting the id list. */
+function selectedTasks() {
+  var onBoard = {};
+  tasksOf(currentProject()).forEach(function (t) { onBoard[t.id] = t; });
+  return selection.map(function (id) { return onBoard[id]; }).filter(Boolean);
+}
+
+/* Moves a whole selection into a lane, keeping the order the cards were in.
+   Sequential single moves against the same anchor preserve that order: each
+   one lands immediately above the anchor, so the group arrives in sequence. */
+function moveMany(ids, status, beforeId) {
+  var order = {};
+  STATUSES.forEach(function (s) {
+    laneOf(currentProject(), s.id).forEach(function (t, i) {
+      order[t.id] = STATUS_IDS.indexOf(s.id) * 10000 + i;
+    });
+  });
+  ids.slice().sort(function (a, b) { return (order[a] || 0) - (order[b] || 0); })
+    .forEach(function (id) { moveTask(id, status, beforeId); });
+}
+
 /* Archiving is the ordinary way a task leaves the board, and it is completely
    reversible: nothing about the task changes except the flag. */
 function archiveTask(id) {
@@ -340,6 +385,33 @@ function archiveTask(id) {
   toast('Archived. Find it under List → Status → Archived.', 'Undo', function () {
     reopenTask(id, true);
   });
+}
+
+/* Archives a batch behind a single undo, so clearing a lane is one action to
+   reverse rather than twenty. Takes tasks, not ids, because every caller has
+   already filtered down to exactly what it means. */
+function archiveMany(tasks, what) {
+  var hit = tasks.filter(function (t) { return !t.archived; });
+  if (!hit.length) return 0;
+  hit.forEach(function (t) {
+    t.archived = true;
+    logActivity(t, 'Archived from ' + statusLabel(t.status));
+    touch(t);
+  });
+  clearSelection(true);
+  save();
+  renderAll();
+  toast(plural(hit.length, what || 'task') + ' archived', 'Undo', function () {
+    hit.forEach(function (t) {
+      t.archived = false;
+      logActivity(t, 'Reopened into ' + statusLabel(t.status));
+      touch(t);
+    });
+    save();
+    renderAll();
+    toast('Put back');
+  });
+  return hit.length;
 }
 
 /* Puts a task back in the lane it left. Silent when it is part of an undo, so
@@ -440,6 +512,11 @@ function setTheme(mode) {
 var TABS = ['board', 'list', 'projects', 'tags', 'settings'];
 
 function showTab(name) {
+  /* A selection belongs to the board you made it on: leaving takes it with
+     you, so you never come back to a stale one you have forgotten about. */
+  /* renderBoard repaints the cards without their selected ring and hides the
+     bar, so coming back to the board never shows a selection that is gone. */
+  if (name !== 'board' && selection.length) { selection = []; renderBoard(); }
   $$('.tabpage').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
   $$('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
   closeMore();
@@ -493,7 +570,8 @@ function renderPicker() {
 }
 
 function cardHTML(t) {
-  var h = '<div class="card" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">';
+  var h = '<div class="card' + (isSelected(t.id) ? ' selected' : '') +
+    '" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">';
   if (t.title) h += '<div class="card-title">' + esc(t.title) + '</div>';
   h += '<div class="card-note' + (t.title ? '' : ' solo') + '">' + esc(t.note) + '</div>';
 
@@ -533,6 +611,8 @@ function renderBoard() {
 
   renderBoardTagChips();
 
+  renderSelBar();
+
   var host = $('#board');
   var html = '';
   STATUSES.forEach(function (s) {
@@ -545,7 +625,14 @@ function renderBoard() {
     }
     html += '<section class="col" data-status="' + s.id + '" style="--st:' + s.hue + '">' +
       '<div class="col-head"><span class="dot"></span>' + esc(s.label) +
-      '<span class="n">' + lane.length + '</span></div>' +
+      '<span class="n">' + lane.length + '</span>' +
+      /* Closed is the lane that piles up, so it gets the one-click way to
+         empty it. It acts on what the lane is actually showing, so a filtered
+         board never archives something you cannot see. */
+      (s.id === 'done' && lane.length
+        ? '<button class="col-act" data-archiveall="1" title="Archive every closed task on this board">Archive all</button>'
+        : '') +
+      '</div>' +
       '<div class="col-body">';
     if (!shown.length) {
       html += '<div class="col-empty">' +
@@ -561,6 +648,25 @@ function renderBoard() {
     html += '</section>';
   });
   host.innerHTML = html;
+}
+
+function renderSelBar() {
+  var picked = selectedTasks();
+  /* An id list that no longer matches anything on the board means the cards
+     went away under it; drop them rather than showing a stale count. */
+  if (picked.length !== selection.length) {
+    selection = picked.map(function (t) { return t.id; });
+  }
+  var bar = $('#selBar');
+  if (!picked.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  $('#selCount').textContent = plural(picked.length, 'task') + ' selected';
+  /* Only lanes the selection is not already entirely in are worth offering. */
+  $('#selActs').innerHTML = STATUSES.map(function (s) {
+    var all = picked.every(function (t) { return t.status === s.id; });
+    return '<button class="mini"' + (all ? ' disabled' : '') +
+      ' data-selmove="' + s.id + '">' + esc(s.label) + '</button>';
+  }).join('') + '<button class="mini" data-selarchive="1">Archive</button>';
 }
 
 function renderBoardTagChips() {
@@ -1082,6 +1188,12 @@ function startDrag(card, x, y) {
   line.className = 'drop-line';
 
   card.classList.add('dragging');
+  /* A multi-card drag shows the whole group lifting, and the ghost carries the
+     count so it is obvious how much is about to land. */
+  if (isSelected(card.dataset.id) && selection.length > 1) {
+    fly.setAttribute('data-count', selectedTasks().length);
+    $$('#board .card.selected').forEach(function (c) { c.classList.add('dragging'); });
+  }
   document.body.classList.add('dragging-card');
 
   drag.active = true;
@@ -1129,6 +1241,7 @@ function moveDrag(x, y) {
 function endDrag(commit) {
   if (drag.fly && drag.fly.parentNode) drag.fly.parentNode.removeChild(drag.fly);
   if (drag.line && drag.line.parentNode) drag.line.parentNode.removeChild(drag.line);
+  $$('#board .card.dragging').forEach(function (c) { c.classList.remove('dragging'); });
   if (drag.card) drag.card.classList.remove('dragging');
   $$('.col').forEach(function (c) { c.classList.remove('drop-into'); });
   document.body.classList.remove('dragging-card');
@@ -1141,6 +1254,18 @@ function endDrag(commit) {
   if (commit && wasActive && id && to) {
     var t = taskById(id);
     var moved = t && t.status !== to;
+    /* Dragging a card that is part of a selection drags the whole selection,
+       which is the only thing that would not surprise someone who just picked
+       five cards on purpose. */
+    if (isSelected(id) && selection.length > 1) {
+      var ids = selectedTasks().map(function (x) { return x.id; });
+      var n = selectedTasks().filter(function (x) { return x.status !== to; }).length;
+      moveMany(ids, to, before || null);
+      clearSelection(true);
+      renderBoard(); renderList(); renderCounts();
+      if (n) toast(plural(n, 'task') + ' → ' + statusLabel(to));
+      return;
+    }
     moveTask(id, to, before || null);
     renderBoard(); renderList(); renderCounts();
     if (moved) toast(statusLabel(to));
@@ -1152,6 +1277,15 @@ function onPointerDown(e) {
   var card = e.target.closest ? e.target.closest('.card') : null;
   if (!card || !$('#board').contains(card)) return;
   if (e.target.closest('button, a, input, textarea, select')) return;
+
+  /* Shift (or ctrl/cmd) turns a click into a selection toggle rather than a
+     drag or an open. Handled on the way down so the card responds instantly. */
+  if (e.shiftKey || e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    toggleSelect(card.dataset.id);
+    drag = null;
+    return;
+  }
 
   drag = {
     card: card, id: card.dataset.id, active: false,
@@ -1517,6 +1651,7 @@ function init() {
     }
     saveUI();
     boardFilter.tag = '';
+    selection = [];
     renderAll();
   });
   $('#btnNewTask').addEventListener('click', function () { $('#quickNote').focus(); });
@@ -1536,7 +1671,31 @@ function init() {
     renderBoard();
   });
   $('#board').addEventListener('click', function (e) {
-    if (e.target.closest('[data-showall]')) { ui.showAllDone = true; saveUI(); renderBoard(); }
+    if (e.target.closest('[data-showall]')) { ui.showAllDone = true; saveUI(); renderBoard(); return; }
+    if (e.target.closest('[data-archiveall]')) {
+      /* Exactly what the lane is showing, so a filtered board cannot archive
+         something off screen. */
+      var closed = laneOf(currentProject(), 'done').filter(matchesBoard);
+      if (!closed.length) { toast('Nothing closed to archive'); return; }
+      archiveMany(closed, 'closed task');
+    }
+  });
+
+  /* Selection bar */
+  $('#selBar').addEventListener('click', function (e) {
+    var mv = e.target.closest('[data-selmove]');
+    if (mv) {
+      var picked = selectedTasks();
+      var to = mv.dataset.selmove;
+      var n = picked.filter(function (t) { return t.status !== to; }).length;
+      moveMany(picked.map(function (t) { return t.id; }), to, null);
+      clearSelection(true);
+      renderAll();
+      toast(plural(n, 'task') + ' → ' + statusLabel(to));
+      return;
+    }
+    if (e.target.closest('[data-selarchive]')) { archiveMany(selectedTasks()); return; }
+    if (e.target.closest('#selClear')) clearSelection(true);
   });
 
   /* Cards: pointer drag, with a plain tap falling through to opening one */
@@ -1683,20 +1842,11 @@ function init() {
     this.value = '';
   });
   $('#btnArchiveClosed').addEventListener('click', function () {
+    /* Every project, unlike the board's own Archive all, which is scoped to
+       the lane in front of you. */
     var closed = liveTasks().filter(function (t) { return t.status === 'done'; });
     if (!closed.length) { toast('Nothing closed to archive'); return; }
-    closed.forEach(function (t) {
-      t.archived = true;
-      logActivity(t, 'Archived from ' + statusLabel(t.status));
-      touch(t);
-    });
-    save(); renderAll();
-    /* Reversible in bulk too: undo puts every one of them back. */
-    toast(plural(closed.length, 'task') + ' archived', 'Undo', function () {
-      closed.forEach(function (t) { t.archived = false; logActivity(t, 'Reopened into ' + statusLabel(t.status)); });
-      save(); renderAll();
-      toast('Put back');
-    });
+    archiveMany(closed, 'closed task');
   });
   $('#btnViewArchive').addEventListener('click', function () {
     listFilter = { q: '', project: '', status: 'archived', tag: '' };
@@ -1730,6 +1880,7 @@ function init() {
     if (e.key === 'Escape') {
       if (openId) { closeDrawer(); return; }
       if ($('#moreSheet').classList.contains('open')) { closeMore(); return; }
+      if (selection.length) { clearSelection(true); return; }
       if (typing) document.activeElement.blur();
       return;
     }
