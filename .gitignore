@@ -27,3 +27,6 @@ desktop.ini
 
 # Backups produced by the app's own export, in case one is saved in here
 listboard-*.json
+
+# Local holding pen for files taken out of the project
+Trash/
