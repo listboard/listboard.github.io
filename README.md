@@ -36,8 +36,11 @@ to sign up for.
   task panel. The Tags page renames a tag across every task at once.
 - **Search and filter.** Filter one board by text or tag; search every task
   everywhere from the List page, filtered by project, status and tag.
-- **Backups.** Export the whole board as JSON, import it back on another
-  machine. Import merges and never deletes.
+- **Backups.** Export the whole board as one JSON file, named
+  `listboard-YYYY-MM-DD-HHMMSS.json`. Import merges a file back in and never
+  deletes; drop the file onto Settings, or use the picker. On iPad and iPhone
+  the export goes through the share sheet, which is the only way Safari keeps
+  the filename.
 - **Dark by default,** yellow accent, light mode opt-in. Both themes clear
   WCAG AA on every piece of text.
 
