@@ -1,0 +1,29 @@
+# AI assistant / agent instruction files.
+# These are working notes for whoever (or whatever) is editing the code. They
+# are useful locally and just noise in a public repo, so they stay on disk and
+# out of git. Keep your local CLAUDE.md: nothing here deletes it.
+CLAUDE.md
+AGENTS.md
+AGENT.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.windsurfrules
+.clinerules
+.aider*
+.continue/
+.github/copilot-instructions.md
+.codeium/
+.roo/
+.goose/
+
+# Editor and OS clutter
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Backups produced by the app's own export, in case one is saved in here
+listboard-*.json
