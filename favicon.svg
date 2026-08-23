@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <rect width="40" height="40" rx="8" fill="#131211"/>
+  <!-- three lanes; the middle one part-filled, the last one topped out -->
+  <rect x="7"  y="9"  width="7.5" height="22" rx="2.2" fill="none" stroke="#facc15" stroke-width="2.2"/>
+  <rect x="16.25" y="9" width="7.5" height="22" rx="2.2" fill="none" stroke="#facc15" stroke-width="2.2"/>
+  <rect x="25.5" y="9" width="7.5" height="22" rx="2.2" fill="none" stroke="#facc15" stroke-width="2.2"/>
+  <rect x="9.2"  y="11.4" width="3.1" height="4.4" rx="1.2" fill="#facc15"/>
+  <rect x="18.45" y="11.4" width="3.1" height="4.4" rx="1.2" fill="#facc15"/>
+  <rect x="18.45" y="17.6" width="3.1" height="4.4" rx="1.2" fill="#facc15"/>
+  <rect x="27.7" y="11.4" width="3.1" height="4.4" rx="1.2" fill="#facc15"/>
+</svg>

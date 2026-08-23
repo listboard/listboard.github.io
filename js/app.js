@@ -1,0 +1,1452 @@
+/* Listboard
+   ---------
+   A kanban board for project tasks, kept entirely in this browser.
+
+   Everything lives in one localStorage blob under 'lb-data':
+
+     { schema, projects: [Project], tasks: [Task] }
+
+     Project = { id, name, created, archived }
+     Task    = { id, project, title, note, tags[], status, order,
+                 created, updated, due, priority,
+                 comments: [{ id, body, created }],
+                 activity: [{ at, what }] }
+
+   A task needs nothing but a note. Title, tags, due date and priority are all
+   optional and absent rather than empty when unused.
+
+   No frameworks, no build step, no service worker. */
+
+var KEY_DATA = 'lb-data';
+var KEY_THEME = 'lb-theme';
+var KEY_UI = 'lb-ui';
+var KEY_RESCUED = 'lb-data-rescued';
+var SCHEMA = 1;
+
+/* The three lanes. The ids are written into storage, so they are permanent:
+   renaming a label is free, renaming an id is a data migration. */
+var STATUSES = [
+  { id: 'new', label: 'New', hue: 'var(--st-new)' },
+  { id: 'doing', label: 'In progress', hue: 'var(--st-doing)' },
+  { id: 'done', label: 'Closed', hue: 'var(--st-done)' }
+];
+var STATUS_IDS = STATUSES.map(function (s) { return s.id; });
+function statusLabel(id) {
+  for (var i = 0; i < STATUSES.length; i++) if (STATUSES[i].id === id) return STATUSES[i].label;
+  return id;
+}
+function statusHue(id) {
+  for (var i = 0; i < STATUSES.length; i++) if (STATUSES[i].id === id) return STATUSES[i].hue;
+  return 'var(--line)';
+}
+
+/* How many closed cards a column shows before it offers to show the rest.
+   Closed is the lane that grows without bound; the other two are the work. */
+var DONE_PREVIEW = 12;
+
+/* ── Storage, defensively ─────────────────────────────────────────────
+   Tasks only exist here, so a write that silently fails is the worst bug this
+   app can have. Every write is read back, and unreadable data is copied aside
+   before anything else touches it. */
+var storageOK = true;
+var rescued = false;
+
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { storageOK = false; return null; }
+}
+
+function storageSet(key, str) {
+  try {
+    localStorage.setItem(key, str);
+    /* Read back rather than trusting the write: Safari's private mode has
+       historically accepted setItem and thrown only on some paths, and a quota
+       failure part-way through is worth catching now, not next load. */
+    return localStorage.getItem(key) === str;
+  } catch (e) {
+    storageOK = false;
+    return false;
+  }
+}
+
+function loadJSON(key, fallback) {
+  var raw = storageGet(key);
+  if (!raw) return fallback;
+  try { return JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+function emptyData() { return { schema: SCHEMA, projects: [], tasks: [] }; }
+
+/* Reads the board without ever destroying what is there. */
+function loadData() {
+  var raw = storageGet(KEY_DATA);
+  if (!raw) return emptyData();
+  var parsed = null;
+  try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.tasks)) {
+    /* Keep the unreadable original. It may still be recoverable by hand, and
+       overwriting it would be the one truly unrecoverable move. */
+    if (!storageGet(KEY_RESCUED)) storageSet(KEY_RESCUED, raw);
+    rescued = true;
+    return emptyData();
+  }
+  var d = emptyData();
+  d.projects = (Array.isArray(parsed.projects) ? parsed.projects : [])
+    .filter(function (p) { return p && p.id; })
+    .map(function (p) {
+      return {
+        id: String(p.id),
+        name: String(p.name || 'Untitled'),
+        created: p.created || nowISO(),
+        archived: !!p.archived
+      };
+    });
+  d.tasks = parsed.tasks.filter(function (t) { return t && t.id; }).map(normalizeTask);
+  return d;
+}
+
+function normalizeTask(t) {
+  return {
+    id: String(t.id),
+    project: t.project ? String(t.project) : '',
+    title: typeof t.title === 'string' ? t.title : '',
+    note: typeof t.note === 'string' ? t.note : '',
+    tags: Array.isArray(t.tags) ? t.tags.map(cleanTag).filter(Boolean) : [],
+    status: STATUS_IDS.indexOf(t.status) >= 0 ? t.status : 'new',
+    order: typeof t.order === 'number' ? t.order : 0,
+    created: t.created || nowISO(),
+    updated: t.updated || t.created || nowISO(),
+    due: t.due || '',
+    priority: (t.priority === 'high' || t.priority === 'low') ? t.priority : 'normal',
+    comments: Array.isArray(t.comments) ? t.comments.filter(function (c) { return c && c.body; }).map(function (c) {
+      return { id: c.id || uid(), body: String(c.body), created: c.created || nowISO() };
+    }) : [],
+    activity: Array.isArray(t.activity) ? t.activity.slice(-50) : []
+  };
+}
+
+var data = loadData();
+var ui = loadJSON(KEY_UI, {}) || {};
+if (typeof ui !== 'object') ui = {};
+
+var warnedStorage = false;
+function save() {
+  var ok = storageSet(KEY_DATA, JSON.stringify(data));
+  if (!ok) {
+    storageOK = false;
+    if (!warnedStorage) { warnedStorage = true; toast('This browser is not saving your tasks. See Settings.'); }
+  }
+  renderStorageStatus();
+  return ok;
+}
+function saveUI() { storageSet(KEY_UI, JSON.stringify(ui)); }
+
+/* ── Small helpers ────────────────────────────────────────────────────── */
+function $(sel, root) { return (root || document).querySelector(sel); }
+function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+function nowISO() { return new Date().toISOString(); }
+function uid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
+function cleanTag(s) {
+  return String(s || '').trim().replace(/^#+/, '').replace(/\s+/g, '-').slice(0, 32).toLowerCase();
+}
+function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+function toast(msg, actionLabel, action) {
+  var el = $('#toast');
+  el.innerHTML = '<span></span>';
+  el.firstChild.textContent = msg;
+  if (actionLabel) {
+    var b = document.createElement('button');
+    b.textContent = actionLabel;
+    b.addEventListener('click', function () {
+      el.classList.remove('show');
+      clearTimeout(toast._t);
+      action();
+    });
+    el.appendChild(b);
+  }
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { el.classList.remove('show'); }, actionLabel ? 7000 : 2600);
+}
+
+/* Dates are stored as ISO strings and shown in the reader's locale. */
+function fmtDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function fmtWhen(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function todayStr() {
+  var d = new Date();
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+/* Due dates are plain YYYY-MM-DD, compared as strings so no timezone can
+   shift a date across midnight. */
+function dueClass(due) {
+  if (!due) return '';
+  var t = todayStr();
+  if (due < t) return 'overdue';
+  if (due === t) return 'due-soon';
+  return '';
+}
+function dueLabel(due) {
+  var t = todayStr();
+  if (due === t) return 'today';
+  var d = new Date(due + 'T00:00:00');
+  if (isNaN(d)) return due;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/* ── Model ────────────────────────────────────────────────────────────── */
+function projectById(id) {
+  for (var i = 0; i < data.projects.length; i++) if (data.projects[i].id === id) return data.projects[i];
+  return null;
+}
+function projectName(id) {
+  var p = projectById(id);
+  return p ? p.name : 'No project';
+}
+function taskById(id) {
+  for (var i = 0; i < data.tasks.length; i++) if (data.tasks[i].id === id) return data.tasks[i];
+  return null;
+}
+function activeProjects() { return data.projects.filter(function (p) { return !p.archived; }); }
+
+/* The board shows one project, or every project at once. '' means all. */
+function currentProject() {
+  if (ui.project === '' || ui.project === undefined) return '';
+  return projectById(ui.project) && !projectById(ui.project).archived ? ui.project : '';
+}
+
+function tasksOf(projectId) {
+  return data.tasks.filter(function (t) {
+    if (projectId === '') {
+      /* The all-projects board hides tasks filed under an archived project so
+         archiving actually quiets the board down. */
+      var p = projectById(t.project);
+      return !p || !p.archived;
+    }
+    return t.project === projectId;
+  });
+}
+
+function laneOf(projectId, status) {
+  return tasksOf(projectId).filter(function (t) { return t.status === status; })
+    .sort(function (a, b) { return a.order - b.order; });
+}
+
+function logActivity(t, what) {
+  t.activity.push({ at: nowISO(), what: what });
+  if (t.activity.length > 50) t.activity = t.activity.slice(-50);
+}
+
+function touch(t) { t.updated = nowISO(); }
+
+function addTask(fields) {
+  var t = normalizeTask({
+    id: uid(),
+    project: fields.project || '',
+    title: fields.title || '',
+    note: fields.note || '',
+    tags: fields.tags || [],
+    status: fields.status || 'new',
+    created: nowISO(),
+    updated: nowISO()
+  });
+  /* New work lands at the top of its lane, where you will see it. */
+  var lane = laneOf(t.project, t.status);
+  t.order = lane.length ? lane[0].order - 10 : 0;
+  logActivity(t, 'Created');
+  data.tasks.push(t);
+  save();
+  return t;
+}
+
+/* Moves a task to a lane, and optionally to a position within it. `beforeId`
+   is the task it should land above, or null for the end of the lane. */
+function moveTask(id, status, beforeId) {
+  var t = taskById(id);
+  if (!t) return;
+  var from = t.status;
+  t.status = status;
+  if (from !== status) {
+    logActivity(t, statusLabel(from) + ' → ' + statusLabel(status));
+    touch(t);
+  }
+  /* Renumber the whole destination lane so orders stay dense and comparable
+     however many times a card has been dragged. */
+  var lane = laneOf(t.project, status).filter(function (x) { return x.id !== id; });
+  var at = lane.length;
+  if (beforeId) {
+    for (var i = 0; i < lane.length; i++) if (lane[i].id === beforeId) { at = i; break; }
+  }
+  lane.splice(at, 0, t);
+  lane.forEach(function (x, i) { x.order = i * 10; });
+  save();
+}
+
+function setStatus(id, status) {
+  var t = taskById(id);
+  if (!t || t.status === status) return;
+  /* Coming in from a button rather than a drag, so it goes to the top of the
+     lane: it is the thing you just acted on. */
+  var lane = laneOf(t.project, status);
+  moveTask(id, status, lane.length ? lane[0].id : null);
+}
+
+var lastDeleted = null;
+function deleteTask(id) {
+  var i = data.tasks.findIndex(function (t) { return t.id === id; });
+  if (i < 0) return;
+  lastDeleted = { task: data.tasks[i], index: i };
+  data.tasks.splice(i, 1);
+  save();
+  renderAll();
+  toast('Task deleted', 'Undo', function () {
+    if (!lastDeleted) return;
+    data.tasks.splice(Math.min(lastDeleted.index, data.tasks.length), 0, lastDeleted.task);
+    lastDeleted = null;
+    save();
+    renderAll();
+    toast('Task restored');
+  });
+}
+
+function allTags() {
+  var counts = {};
+  data.tasks.forEach(function (t) {
+    t.tags.forEach(function (g) { counts[g] = (counts[g] || 0) + 1; });
+  });
+  return Object.keys(counts).sort().map(function (g) { return { tag: g, n: counts[g] }; });
+}
+
+/* Pulls #hashtags out of typed text and returns the text without them. Used by
+   quick add so a tag can be typed inline without leaving the box. */
+function extractTags(text) {
+  var tags = [];
+  var stripped = String(text).replace(/(^|\s)#([A-Za-z0-9][\w-]*)/g, function (m, pre, tag) {
+    var c = cleanTag(tag);
+    if (c && tags.indexOf(c) < 0) tags.push(c);
+    return pre;
+  });
+  stripped = stripped.replace(/[ \t]+\n/g, '\n').trim();
+  /* If the note was nothing but tags, keep what was typed: an empty note is
+     worse than a redundant one. */
+  return { note: stripped || String(text).trim(), tags: tags };
+}
+
+/* ── Filters ──────────────────────────────────────────────────────────── */
+var boardFilter = { q: '', tag: '' };
+var listFilter = { q: '', project: '', status: '', tag: '' };
+
+function textOf(t) {
+  return [t.title, t.note, t.tags.join(' '), projectName(t.project),
+    t.comments.map(function (c) { return c.body; }).join(' ')].join(' ').toLowerCase();
+}
+function matchesBoard(t) {
+  if (boardFilter.tag && t.tags.indexOf(boardFilter.tag) < 0) return false;
+  if (boardFilter.q && textOf(t).indexOf(boardFilter.q) < 0) return false;
+  return true;
+}
+function matchesList(t) {
+  if (listFilter.project && t.project !== listFilter.project) return false;
+  if (listFilter.status && t.status !== listFilter.status) return false;
+  if (listFilter.tag && t.tags.indexOf(listFilter.tag) < 0) return false;
+  if (listFilter.q && textOf(t).indexOf(listFilter.q) < 0) return false;
+  return true;
+}
+
+/* ── Theme ────────────────────────────────────────────────────────────── */
+function setTheme(mode) {
+  document.documentElement.className = mode;
+  storageSet(KEY_THEME, mode);
+  $('#btnThemeDark').classList.toggle('on', mode === 'dark');
+  $('#btnThemeLight').classList.toggle('on', mode === 'light');
+}
+
+/* ── Tabs and routing ─────────────────────────────────────────────────── */
+var TABS = ['board', 'list', 'projects', 'tags', 'settings'];
+
+function showTab(name) {
+  $$('.tabpage').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
+  $$('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+  closeMore();
+  window.scrollTo(0, 0);
+}
+
+function closeMore() {
+  $('#moreSheet').classList.remove('open');
+  $('.tabs [data-tab="settings"]').classList.remove('sheet-open');
+}
+
+/* #task/<id> opens a task, #project/<id> switches the board, #<tab> is a tab.
+   Task links are what make a card shareable between your own devices. */
+function route() {
+  var h = (location.hash || '').replace(/^#/, '');
+  if (h.indexOf('task/') === 0) {
+    var t = taskById(h.slice(5));
+    if (t) { showTab('board'); openTask(t.id); return; }
+  }
+  if (h.indexOf('project/') === 0) {
+    var p = projectById(h.slice(8));
+    if (p) { ui.project = p.id; saveUI(); showTab('board'); renderAll(); closeDrawer(); return; }
+  }
+  closeDrawer();
+  showTab(TABS.indexOf(h) >= 0 ? h : 'board');
+}
+
+/* ── Rendering: nav counts ────────────────────────────────────────────── */
+function renderCounts() {
+  var open = data.tasks.filter(function (t) { return t.status !== 'done'; }).length;
+  var boardOpen = tasksOf(currentProject()).filter(function (t) { return t.status !== 'done'; }).length;
+  $('#boardCount').textContent = boardOpen ? String(boardOpen) : '';
+  $('#listCount').textContent = data.tasks.length ? String(data.tasks.length) : '';
+  $('#projCount').textContent = activeProjects().length ? String(activeProjects().length) : '';
+  $('#tagCount').textContent = allTags().length ? String(allTags().length) : '';
+  document.title = open ? 'Listboard (' + open + ')' : 'Listboard';
+}
+
+/* ── Rendering: the board ─────────────────────────────────────────────── */
+function renderPicker() {
+  var sel = $('#projectPicker');
+  var cur = currentProject();
+  var html = '<option value="">All projects</option>';
+  activeProjects().forEach(function (p) {
+    html += '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>';
+  });
+  html += '<option value="__new">+ New project...</option>';
+  sel.innerHTML = html;
+  sel.value = cur;
+}
+
+function cardHTML(t) {
+  var h = '<div class="card" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">';
+  if (t.title) h += '<div class="card-title">' + esc(t.title) + '</div>';
+  h += '<div class="card-note' + (t.title ? '' : ' solo') + '">' + esc(t.note) + '</div>';
+
+  var foot = '';
+  t.tags.forEach(function (g) { foot += '<span class="tag">' + esc(g) + '</span>'; });
+  if (t.priority === 'high') foot += '<span class="prio prio-high">HIGH</span>';
+  if (t.priority === 'low') foot += '<span class="prio prio-low">LOW</span>';
+  if (foot) foot += '<span class="spacer"></span>';
+  if (t.due) {
+    foot += '<span class="meta ' + dueClass(t.due) + '" title="Due ' + esc(fmtDate(t.due)) + '">' +
+      '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>' +
+      esc(dueLabel(t.due)) + '</span>';
+  }
+  if (t.comments.length) {
+    foot += '<span class="meta" title="' + plural(t.comments.length, 'comment') + '">' +
+      '<svg viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg>' +
+      t.comments.length + '</span>';
+  }
+  if (currentProject() === '' && t.project) {
+    foot += '<span class="meta" title="Project">' + esc(projectName(t.project)) + '</span>';
+  }
+  if (foot) h += '<div class="card-foot">' + foot + '</div>';
+  return h + '</div>';
+}
+
+function renderBoard() {
+  var proj = currentProject();
+  var p = proj ? projectById(proj) : null;
+  $('#boardTitle').textContent = p ? p.name : 'All projects';
+
+  var all = tasksOf(proj);
+  var open = all.filter(function (t) { return t.status !== 'done'; }).length;
+  var overdue = all.filter(function (t) { return t.status !== 'done' && t.due && t.due < todayStr(); }).length;
+  $('#boardSub').textContent = all.length
+    ? plural(open, 'open task') + ' of ' + all.length + (overdue ? ', ' + overdue + ' overdue' : '')
+    : (p ? 'Nothing here yet. Jot the first task below.' : 'No tasks yet. Jot the first one below.');
+
+  renderBoardTagChips();
+
+  var host = $('#board');
+  var html = '';
+  STATUSES.forEach(function (s) {
+    var lane = laneOf(proj, s.id).filter(matchesBoard);
+    var shown = lane;
+    var hidden = 0;
+    if (s.id === 'done' && !ui.showAllDone && lane.length > DONE_PREVIEW) {
+      shown = lane.slice(0, DONE_PREVIEW);
+      hidden = lane.length - DONE_PREVIEW;
+    }
+    html += '<section class="col" data-status="' + s.id + '" style="--st:' + s.hue + '">' +
+      '<div class="col-head"><span class="dot"></span>' + esc(s.label) +
+      '<span class="n">' + lane.length + '</span></div>' +
+      '<div class="col-body">';
+    if (!shown.length) {
+      html += '<div class="col-empty">' +
+        (lane.length ? 'Nothing matches the filter' :
+          s.id === 'new' ? 'Drop a task here' : 'Nothing ' + s.label.toLowerCase()) +
+        '</div>';
+    }
+    shown.forEach(function (t) { html += cardHTML(t); });
+    html += '</div>';
+    if (hidden) {
+      html += '<button class="col-more" data-showall="1">Show ' + hidden + ' more closed</button>';
+    }
+    html += '</section>';
+  });
+  host.innerHTML = html;
+}
+
+function renderBoardTagChips() {
+  var proj = currentProject();
+  var counts = {};
+  tasksOf(proj).forEach(function (t) {
+    t.tags.forEach(function (g) { counts[g] = (counts[g] || 0) + 1; });
+  });
+  var tags = Object.keys(counts).sort();
+  var host = $('#boardTagChips');
+  var wrap = host.closest('.filter-row');
+  if (wrap) wrap.style.display = tags.length ? '' : 'none';
+  host.innerHTML = tags.map(function (g) {
+    return '<button class="chip' + (boardFilter.tag === g ? ' on' : '') + '" data-btag="' + esc(g) + '">' +
+      esc(g) + '<span class="n">' + counts[g] + '</span></button>';
+  }).join('');
+}
+
+/* ── Rendering: the flat list ─────────────────────────────────────────── */
+function renderListChips() {
+  $('#listProjChips').innerHTML = ['<button class="chip' + (listFilter.project === '' ? ' on' : '') +
+    '" data-lproj="">Any</button>'].concat(activeProjects().map(function (p) {
+      var n = data.tasks.filter(function (t) { return t.project === p.id; }).length;
+      return '<button class="chip' + (listFilter.project === p.id ? ' on' : '') +
+        '" data-lproj="' + esc(p.id) + '">' + esc(p.name) + '<span class="n">' + n + '</span></button>';
+    })).join('');
+
+  $('#listStatusChips').innerHTML = ['<button class="chip' + (listFilter.status === '' ? ' on' : '') +
+    '" data-lstatus="">Any</button>'].concat(STATUSES.map(function (s) {
+      var n = data.tasks.filter(function (t) { return t.status === s.id; }).length;
+      return '<button class="chip' + (listFilter.status === s.id ? ' on' : '') +
+        '" data-lstatus="' + s.id + '">' + esc(s.label) + '<span class="n">' + n + '</span></button>';
+    })).join('');
+
+  var tags = allTags();
+  var row = $('#listTagChips').closest('.filter-row');
+  if (row) row.style.display = tags.length ? '' : 'none';
+  $('#listTagChips').innerHTML = ['<button class="chip' + (listFilter.tag === '' ? ' on' : '') +
+    '" data-ltag="">Any</button>'].concat(tags.map(function (g) {
+      return '<button class="chip' + (listFilter.tag === g.tag ? ' on' : '') +
+        '" data-ltag="' + esc(g.tag) + '">' + esc(g.tag) + '<span class="n">' + g.n + '</span></button>';
+    })).join('');
+}
+
+function renderList() {
+  renderListChips();
+  var rows = data.tasks.filter(matchesList).sort(function (a, b) {
+    return (b.updated || '').localeCompare(a.updated || '');
+  });
+  $('#listResultCount').textContent = rows.length === data.tasks.length
+    ? plural(rows.length, 'task')
+    : rows.length + ' of ' + data.tasks.length + ' tasks';
+
+  if (!rows.length) {
+    $('#listRows').innerHTML = '<div class="empty">' +
+      (data.tasks.length ? 'Nothing matches those filters.' : 'No tasks yet. Add one on the Board.') +
+      '</div>';
+    return;
+  }
+  $('#listRows').innerHTML = rows.map(function (t) {
+    var sub = t.title ? t.note : '';
+    return '<div class="trow" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">' +
+      '<div class="trow-main">' +
+      '<div class="trow-title">' + esc(t.title || t.note.split('\n')[0]) + '</div>' +
+      (sub ? '<div class="trow-note">' + esc(sub) + '</div>' : '') +
+      '<div class="card-foot">' +
+      t.tags.map(function (g) { return '<span class="tag">' + esc(g) + '</span>'; }).join('') +
+      (t.due ? '<span class="meta ' + dueClass(t.due) + '">Due ' + esc(dueLabel(t.due)) + '</span>' : '') +
+      (t.comments.length ? '<span class="meta">' + plural(t.comments.length, 'comment') + '</span>' : '') +
+      '</div></div>' +
+      '<div class="trow-side">' +
+      '<span class="status-badge">' + esc(statusLabel(t.status)) + '</span>' +
+      '<span class="proj-badge">' + esc(projectName(t.project)) + '</span>' +
+      '</div></div>';
+  }).join('');
+}
+
+/* ── Rendering: projects and tags ─────────────────────────────────────── */
+function renderProjects() {
+  if (!data.projects.length) {
+    $('#projectRows').innerHTML = '<div class="empty">No projects yet. Tasks without one are filed under "No project".</div>';
+    return;
+  }
+  $('#projectRows').innerHTML = data.projects.map(function (p) {
+    var all = data.tasks.filter(function (t) { return t.project === p.id; });
+    var open = all.filter(function (t) { return t.status !== 'done'; }).length;
+    return '<div class="arow' + (p.archived ? ' archived' : '') + '" data-pid="' + esc(p.id) + '">' +
+      '<span class="arow-name">' + esc(p.name) + (p.archived ? ' <span class="arow-stats">(archived)</span>' : '') + '</span>' +
+      '<span class="arow-stats">' + open + ' open / ' + all.length + ' total</span>' +
+      '<span class="arow-acts">' +
+      (p.archived ? '' : '<button class="mini" data-pact="open">Open board</button>') +
+      '<button class="mini" data-pact="rename">Rename</button>' +
+      '<button class="mini" data-pact="archive">' + (p.archived ? 'Unarchive' : 'Archive') + '</button>' +
+      '<button class="mini danger" data-pact="delete">Delete</button>' +
+      '</span></div>';
+  }).join('');
+}
+
+function renderTags() {
+  var tags = allTags();
+  if (!tags.length) {
+    $('#tagRows').innerHTML = '<div class="empty">No tags yet. Type <b>#something</b> in the quick-add box, or add tags in a task.</div>';
+    return;
+  }
+  $('#tagRows').innerHTML = tags.map(function (g) {
+    return '<div class="arow" data-tag="' + esc(g.tag) + '">' +
+      '<span class="arow-name"><span class="tag">' + esc(g.tag) + '</span></span>' +
+      '<span class="arow-stats">' + plural(g.n, 'task') + '</span>' +
+      '<span class="arow-acts">' +
+      '<button class="mini" data-tact="filter">Show tasks</button>' +
+      '<button class="mini" data-tact="rename">Rename</button>' +
+      '<button class="mini danger" data-tact="remove">Remove everywhere</button>' +
+      '</span></div>';
+  }).join('');
+}
+
+/* ── Rendering: settings ──────────────────────────────────────────────── */
+function renderStorageStatus() {
+  var bytes = 0;
+  var raw = storageGet(KEY_DATA);
+  if (raw) bytes = raw.length;
+  var kb = (bytes / 1024).toFixed(bytes > 10240 ? 0 : 1);
+  var lines = [];
+  if (!storageOK) {
+    lines.push('<b class="warn">This browser is refusing to save.</b> Private windows and blocked site data both do this. Export a backup now, because nothing typed here will survive a reload.');
+  } else {
+    lines.push('Saving normally. ' + plural(data.tasks.length, 'task') + ' and ' +
+      plural(data.projects.length, 'project') + ', about ' + kb + ' KB under <code>lb-data</code>.');
+  }
+  if (rescued) {
+    lines.push('<b class="warn">Earlier data could not be read</b> and was copied to <code>lb-data-rescued</code> rather than overwritten. It is still in this browser if you want to recover it by hand.');
+  }
+  lines.push('Storage is per browser and per device, and clearing site data removes it. There is no server and no account, so backups are the only copy.');
+  $('#storageStatus').innerHTML = lines.map(function (l) { return '<p style="margin:.35rem 0">' + l + '</p>'; }).join('');
+}
+
+function renderAll() {
+  renderCounts();
+  renderPicker();
+  renderBoard();
+  renderList();
+  renderProjects();
+  renderTags();
+  renderStorageStatus();
+}
+
+/* ── The task drawer ──────────────────────────────────────────────────── */
+var openId = null;
+
+function openTask(id) {
+  var t = taskById(id);
+  if (!t) return;
+  openId = id;
+  $('#drawerScrim').hidden = false;
+  var d = $('#drawer');
+  d.hidden = false;
+  drawTaskDrawer(t);
+  if (location.hash !== '#task/' + id) history.replaceState(null, '', '#task/' + id);
+  var first = $('#dTitle', d);
+  if (first && !t.title && !t.note) first.focus();
+}
+
+function closeDrawer() {
+  if (!openId) return;
+  openId = null;
+  $('#drawer').hidden = true;
+  $('#drawer').innerHTML = '';
+  $('#drawerScrim').hidden = true;
+  if ((location.hash || '').indexOf('#task/') === 0) history.replaceState(null, '', '#board');
+}
+
+function drawTaskDrawer(t) {
+  var d = $('#drawer');
+  d.innerHTML =
+    '<div class="drawer-head">' +
+    '<span class="status-badge" id="dBadge" style="--st:' + statusHue(t.status) + '">' + esc(statusLabel(t.status)) + '</span>' +
+    '<span class="spacer"></span>' +
+    '<button class="mini" id="dCopyLink" title="Copy a link straight to this task">Link</button>' +
+    '<button class="drawer-x" id="dClose" title="Close (Esc)">&times;</button>' +
+    '</div>' +
+
+    '<div class="dfield"><label for="dTitle">Title <span style="text-transform:none;letter-spacing:0">(optional)</span></label>' +
+    '<input type="text" id="dTitle" maxlength="140" value="' + esc(t.title) + '" placeholder="Untitled"></div>' +
+
+    '<div class="dfield"><label for="dNote">Note</label>' +
+    '<textarea id="dNote" rows="6" placeholder="What is this task?">' + esc(t.note) + '</textarea></div>' +
+
+    '<div class="dfield"><label>Status</label><div class="status-picker" id="dStatus">' +
+    STATUSES.map(function (s) {
+      return '<button data-st="' + s.id + '"' + (t.status === s.id ? ' class="on"' : '') + '>' + esc(s.label) + '</button>';
+    }).join('') + '</div></div>' +
+
+    '<div class="dfield"><label>Tags</label><div class="tag-editor" id="dTags"></div></div>' +
+
+    '<div class="grid2">' +
+    '<div class="dfield"><label for="dProject">Project</label>' +
+    '<select id="dProject">' +
+    '<option value="">No project</option>' +
+    data.projects.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (t.project === p.id ? ' selected' : '') + '>' +
+        esc(p.name) + (p.archived ? ' (archived)' : '') + '</option>';
+    }).join('') +
+    '</select></div>' +
+    '<div class="dfield"><label for="dPriority">Priority</label>' +
+    '<select id="dPriority">' +
+    ['low', 'normal', 'high'].map(function (p) {
+      return '<option value="' + p + '"' + (t.priority === p ? ' selected' : '') + '>' +
+        p.charAt(0).toUpperCase() + p.slice(1) + '</option>';
+    }).join('') + '</select></div>' +
+    '</div>' +
+
+    '<div class="dfield"><label for="dDue">Due date</label>' +
+    '<input type="date" id="dDue" value="' + esc(t.due) + '"></div>' +
+
+    '<div class="dfield"><label>Comments</label>' +
+    '<div id="dComments"></div>' +
+    '<textarea id="dNewComment" rows="2" placeholder="Add a comment or a progress note..."></textarea>' +
+    '<div class="row" style="margin-top:.4rem"><button class="mini primary" id="dAddComment">Add comment</button></div>' +
+    '</div>' +
+
+    '<div class="dfield"><label>History</label><ul class="activity" id="dActivity"></ul></div>' +
+
+    '<div class="drawer-foot">' +
+    '<button class="danger" id="dDelete">Delete task</button>' +
+    '<span style="flex:1"></span>' +
+    '<span class="hint" id="dSaved">Saved automatically</span>' +
+    '</div>';
+
+  drawTags(t);
+  drawComments(t);
+  drawActivity(t);
+  wireDrawer(t);
+}
+
+function drawTags(t) {
+  var host = $('#dTags');
+  host.innerHTML = t.tags.map(function (g) {
+    return '<span class="tag-chip">' + esc(g) + '<button data-untag="' + esc(g) + '" title="Remove tag">&times;</button></span>';
+  }).join('') +
+    '<input type="text" class="tag-input" id="dTagInput" placeholder="add tag, Enter" maxlength="32" list="dTagList">' +
+    '<datalist id="dTagList">' + allTags().map(function (g) {
+      return '<option value="' + esc(g.tag) + '"></option>';
+    }).join('') + '</datalist>';
+}
+
+function drawComments(t) {
+  var host = $('#dComments');
+  if (!t.comments.length) {
+    host.innerHTML = '<div class="hint" style="margin-bottom:.5rem">No comments yet.</div>';
+    return;
+  }
+  host.innerHTML = t.comments.map(function (c) {
+    return '<div class="comment"><div class="comment-body">' + esc(c.body) + '</div>' +
+      '<div class="comment-when">' + esc(fmtWhen(c.created)) +
+      '<button data-delcomment="' + esc(c.id) + '">delete</button></div></div>';
+  }).join('');
+}
+
+function drawActivity(t) {
+  var items = [{ at: t.created, what: 'Created' }].concat(
+    t.activity.filter(function (a) { return a.what !== 'Created'; }));
+  $('#dActivity').innerHTML = items.slice(-12).reverse().map(function (a) {
+    return '<li>' + esc(a.what) + ' · ' + esc(fmtWhen(a.at)) + '</li>';
+  }).join('');
+}
+
+function flashSaved() {
+  var el = $('#dSaved');
+  if (!el) return;
+  el.textContent = 'Saved';
+  clearTimeout(flashSaved._t);
+  flashSaved._t = setTimeout(function () {
+    if ($('#dSaved')) $('#dSaved').textContent = 'Saved automatically';
+  }, 1200);
+}
+
+function wireDrawer(t) {
+  var d = $('#drawer');
+
+  $('#dClose', d).addEventListener('click', function () { closeDrawer(); });
+
+  $('#dCopyLink', d).addEventListener('click', function () {
+    var url = location.href.split('#')[0] + '#task/' + t.id;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () { toast('Link copied'); },
+        function () { toast(url); });
+    } else { toast(url); }
+  });
+
+  /* Title and note save on a short debounce so typing is never interrupted by
+     a re-render, and once more on blur in case the tab is closed mid-pause. */
+  var deb;
+  function saveText() {
+    var nt = $('#dTitle', d), nn = $('#dNote', d);
+    if (!nt || !nn) return;
+    if (t.title === nt.value && t.note === nn.value) return;
+    t.title = nt.value;
+    t.note = nn.value;
+    touch(t);
+    save();
+    renderBoard(); renderList(); renderCounts();
+    flashSaved();
+  }
+  [$('#dTitle', d), $('#dNote', d)].forEach(function (el) {
+    el.addEventListener('input', function () { clearTimeout(deb); deb = setTimeout(saveText, 500); });
+    el.addEventListener('blur', function () { clearTimeout(deb); saveText(); });
+  });
+
+  $('#dStatus', d).addEventListener('click', function (e) {
+    var b = e.target.closest('[data-st]');
+    if (!b) return;
+    setStatus(t.id, b.dataset.st);
+    $$('#dStatus button', d).forEach(function (x) { x.classList.toggle('on', x === b); });
+    var badge = $('#dBadge', d);
+    badge.textContent = statusLabel(t.status);
+    badge.style.setProperty('--st', statusHue(t.status));
+    drawActivity(t);
+    renderBoard(); renderList(); renderCounts();
+    flashSaved();
+  });
+
+  $('#dTags', d).addEventListener('click', function (e) {
+    var b = e.target.closest('[data-untag]');
+    if (!b) return;
+    t.tags = t.tags.filter(function (g) { return g !== b.dataset.untag; });
+    touch(t); save();
+    drawTags(t); wireTagInput(t);
+    renderBoard(); renderList(); renderTags(); renderCounts();
+    flashSaved();
+  });
+  wireTagInput(t);
+
+  $('#dProject', d).addEventListener('change', function () {
+    var from = projectName(t.project);
+    t.project = this.value;
+    logActivity(t, 'Moved to ' + projectName(t.project) + ' (from ' + from + ')');
+    touch(t);
+    /* The lane it lands in is a different lane, so give it a fresh position at
+       the top rather than an order borrowed from the old project. */
+    var lane = laneOf(t.project, t.status).filter(function (x) { return x.id !== t.id; });
+    t.order = lane.length ? lane[0].order - 10 : 0;
+    save();
+    drawActivity(t);
+    renderAll();
+    flashSaved();
+  });
+
+  $('#dPriority', d).addEventListener('change', function () {
+    t.priority = this.value; touch(t); save();
+    renderBoard(); renderList(); flashSaved();
+  });
+
+  $('#dDue', d).addEventListener('change', function () {
+    t.due = this.value || '';
+    logActivity(t, t.due ? 'Due ' + fmtDate(t.due) : 'Due date cleared');
+    touch(t); save();
+    drawActivity(t);
+    renderBoard(); renderList(); flashSaved();
+  });
+
+  function addComment() {
+    var box = $('#dNewComment', d);
+    var body = box.value.trim();
+    if (!body) return;
+    t.comments.push({ id: uid(), body: body, created: nowISO() });
+    logActivity(t, 'Commented');
+    touch(t); save();
+    box.value = '';
+    drawComments(t); drawActivity(t);
+    renderBoard(); renderList();
+    flashSaved();
+  }
+  $('#dAddComment', d).addEventListener('click', addComment);
+  $('#dNewComment', d).addEventListener('keydown', function (e) {
+    /* Ctrl/Cmd+Enter files the comment; a bare Enter keeps making paragraphs,
+       because comments are the place people write more than one line. */
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addComment(); }
+  });
+
+  $('#dComments', d).addEventListener('click', function (e) {
+    var b = e.target.closest('[data-delcomment]');
+    if (!b) return;
+    t.comments = t.comments.filter(function (c) { return c.id !== b.dataset.delcomment; });
+    touch(t); save();
+    drawComments(t);
+    renderBoard(); renderList();
+    flashSaved();
+  });
+
+  $('#dDelete', d).addEventListener('click', function () {
+    var id = t.id;
+    closeDrawer();
+    deleteTask(id);
+  });
+}
+
+function wireTagInput(t) {
+  var inp = $('#dTagInput');
+  if (!inp) return;
+  function commit() {
+    var g = cleanTag(inp.value);
+    inp.value = '';
+    if (!g || t.tags.indexOf(g) >= 0) return;
+    t.tags.push(g);
+    touch(t); save();
+    drawTags(t); wireTagInput(t);
+    $('#dTagInput').focus();
+    renderBoard(); renderList(); renderTags(); renderCounts();
+    flashSaved();
+  }
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(); }
+    if (e.key === 'Backspace' && !inp.value && t.tags.length) {
+      t.tags.pop(); touch(t); save();
+      drawTags(t); wireTagInput(t); $('#dTagInput').focus();
+      renderBoard(); renderList(); renderTags();
+    }
+  });
+  inp.addEventListener('blur', commit);
+}
+
+/* ── Drag and drop ────────────────────────────────────────────────────────
+   Pointer events rather than HTML5 drag-and-drop, because the HTML5 API does
+   not fire for touch at all. One code path serves mouse and finger:
+
+     - mouse: a drag begins once the pointer has moved 6px with the button down
+     - touch: a drag begins after a 380ms long press, so a normal swipe still
+       scrolls the column and a normal tap still opens the task
+
+   The card that is being dragged stays where it is at 30% opacity; a cloned
+   'flying' copy follows the pointer, and a drop line shows where it will land. */
+var drag = null;
+
+function cardUnderPoint(x, y, exceptEl) {
+  var els = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+  for (var i = 0; i < els.length; i++) {
+    var c = els[i] && els[i].closest ? els[i].closest('.card') : null;
+    if (c && c !== exceptEl && !c.classList.contains('flying')) return c;
+  }
+  return null;
+}
+function colUnderPoint(x, y) {
+  var els = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
+  for (var i = 0; i < els.length; i++) {
+    var c = els[i] && els[i].closest ? els[i].closest('.col') : null;
+    if (c) return c;
+  }
+  return null;
+}
+
+function startDrag(card, x, y) {
+  var r = card.getBoundingClientRect();
+  var fly = card.cloneNode(true);
+  fly.classList.add('flying');
+  fly.style.width = r.width + 'px';
+  fly.style.left = r.left + 'px';
+  fly.style.top = r.top + 'px';
+  document.body.appendChild(fly);
+
+  var line = document.createElement('div');
+  line.className = 'drop-line';
+
+  card.classList.add('dragging');
+  document.body.classList.add('dragging-card');
+
+  drag.active = true;
+  drag.fly = fly;
+  drag.line = line;
+  drag.dx = x - r.left;
+  drag.dy = y - r.top;
+  moveDrag(x, y);
+}
+
+function moveDrag(x, y) {
+  drag.fly.style.left = (x - drag.dx) + 'px';
+  drag.fly.style.top = (y - drag.dy) + 'px';
+
+  /* Nudge the page (and, on a phone, the horizontal board) when the pointer
+     reaches an edge, so a card can be dragged somewhere off screen. */
+  var pad = 70;
+  if (y < pad) window.scrollBy(0, -12);
+  else if (y > window.innerHeight - pad) window.scrollBy(0, 12);
+  var board = $('#board');
+  if (board.scrollWidth > board.clientWidth) {
+    var br = board.getBoundingClientRect();
+    if (x < br.left + pad) board.scrollLeft -= 12;
+    else if (x > br.right - pad) board.scrollLeft += 12;
+  }
+
+  var col = colUnderPoint(x, y);
+  $$('.col').forEach(function (c) { c.classList.toggle('drop-into', c === col); });
+  if (!col) { if (drag.line.parentNode) drag.line.parentNode.removeChild(drag.line); drag.before = undefined; return; }
+
+  var body = $('.col-body', col);
+  var over = cardUnderPoint(x, y, drag.card);
+  if (over && over.parentNode === body) {
+    var r = over.getBoundingClientRect();
+    var after = y > r.top + r.height / 2;
+    body.insertBefore(drag.line, after ? over.nextSibling : over);
+    drag.before = after ? (over.nextElementSibling && over.nextElementSibling.dataset.id) || null : over.dataset.id;
+  } else {
+    body.appendChild(drag.line);
+    drag.before = null;
+  }
+  drag.col = col.dataset.status;
+}
+
+function endDrag(commit) {
+  if (drag.fly && drag.fly.parentNode) drag.fly.parentNode.removeChild(drag.fly);
+  if (drag.line && drag.line.parentNode) drag.line.parentNode.removeChild(drag.line);
+  if (drag.card) drag.card.classList.remove('dragging');
+  $$('.col').forEach(function (c) { c.classList.remove('drop-into'); });
+  document.body.classList.remove('dragging-card');
+
+  var id = drag.card && drag.card.dataset.id;
+  var to = drag.col, before = drag.before;
+  var wasActive = drag.active;
+  drag = null;
+
+  if (commit && wasActive && id && to) {
+    var t = taskById(id);
+    var moved = t && t.status !== to;
+    moveTask(id, to, before || null);
+    renderBoard(); renderList(); renderCounts();
+    if (moved) toast(statusLabel(to));
+  }
+}
+
+function onPointerDown(e) {
+  if (e.button !== undefined && e.button !== 0) return;
+  var card = e.target.closest ? e.target.closest('.card') : null;
+  if (!card || !$('#board').contains(card)) return;
+  if (e.target.closest('button, a, input, textarea, select')) return;
+
+  drag = {
+    card: card, id: card.dataset.id, active: false,
+    x0: e.clientX, y0: e.clientY,
+    touch: e.pointerType === 'touch' || e.pointerType === 'pen',
+    timer: null, pointerId: e.pointerId
+  };
+  /* Capture keeps the moves coming even when the pointer outruns the card.
+     It throws if the pointer is already gone, which is harmless here. */
+  try { card.setPointerCapture(e.pointerId); } catch (err) {}
+
+  if (drag.touch) {
+    /* Long press. A vertical swipe cancels it below, so the column still
+       scrolls the way a list is expected to. */
+    drag.timer = setTimeout(function () {
+      if (!drag || drag.active) return;
+      if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) {} }
+      startDrag(drag.card, drag.x0, drag.y0);
+    }, 380);
+  }
+}
+
+function onPointerMove(e) {
+  if (!drag) return;
+  if (drag.active) {
+    e.preventDefault();
+    moveDrag(e.clientX, e.clientY);
+    return;
+  }
+  var dx = Math.abs(e.clientX - drag.x0), dy = Math.abs(e.clientY - drag.y0);
+  if (drag.touch) {
+    /* Moved before the long press fired: this is a scroll, not a drag. */
+    if (dx > 8 || dy > 8) { clearTimeout(drag.timer); drag = null; }
+    return;
+  }
+  if (dx > 6 || dy > 6) startDrag(drag.card, e.clientX, e.clientY);
+}
+
+function onPointerUp(e) {
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  if (!drag.active) {
+    /* A press that never became a drag is a tap: open the task. */
+    var id = drag.id;
+    drag = null;
+    if (id) openTask(id);
+    return;
+  }
+  e.preventDefault();
+  endDrag(true);
+}
+
+function onPointerCancel() {
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  if (drag.active) endDrag(false); else drag = null;
+}
+
+/* ── Projects and tags: actions ───────────────────────────────────────── */
+function addProject(name) {
+  name = String(name || '').trim();
+  if (!name) return null;
+  var dupe = data.projects.filter(function (p) { return p.name.toLowerCase() === name.toLowerCase(); })[0];
+  if (dupe) { toast('There is already a project called ' + dupe.name); return dupe; }
+  var p = { id: uid(), name: name, created: nowISO(), archived: false };
+  data.projects.push(p);
+  save();
+  return p;
+}
+
+function deleteProject(p) {
+  var n = data.tasks.filter(function (t) { return t.project === p.id; }).length;
+  var msg = n
+    ? 'Delete "' + p.name + '"? Its ' + plural(n, 'task') + ' will be kept and filed under "No project".'
+    : 'Delete "' + p.name + '"?';
+  if (!window.confirm(msg)) return;
+  data.tasks.forEach(function (t) {
+    if (t.project === p.id) { t.project = ''; logActivity(t, 'Project deleted, task kept'); }
+  });
+  data.projects = data.projects.filter(function (x) { return x.id !== p.id; });
+  if (ui.project === p.id) { ui.project = ''; saveUI(); }
+  save();
+  renderAll();
+  toast(n ? 'Project deleted, ' + plural(n, 'task') + ' kept' : 'Project deleted');
+}
+
+function renameTagEverywhere(from, to) {
+  to = cleanTag(to);
+  if (!to || to === from) return;
+  var n = 0;
+  data.tasks.forEach(function (t) {
+    if (t.tags.indexOf(from) < 0) return;
+    t.tags = t.tags.filter(function (g) { return g !== from; });
+    if (t.tags.indexOf(to) < 0) t.tags.push(to);
+    touch(t); n++;
+  });
+  save(); renderAll();
+  toast('Renamed on ' + plural(n, 'task'));
+}
+
+function removeTagEverywhere(tag) {
+  var n = data.tasks.filter(function (t) { return t.tags.indexOf(tag) >= 0; }).length;
+  if (!window.confirm('Remove #' + tag + ' from ' + plural(n, 'task') + '? The tasks stay.')) return;
+  data.tasks.forEach(function (t) {
+    if (t.tags.indexOf(tag) < 0) return;
+    t.tags = t.tags.filter(function (g) { return g !== tag; });
+    touch(t);
+  });
+  save(); renderAll();
+  toast('Tag removed from ' + plural(n, 'task'));
+}
+
+/* ── Backup ───────────────────────────────────────────────────────────── */
+function stamp(d) {
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+    '-' + p(d.getHours()) + p(d.getMinutes());
+}
+
+function exportData() {
+  var now = new Date();
+  var payload = {
+    app: 'listboard',
+    version: SCHEMA,
+    exported: now.toISOString(),
+    theme: document.documentElement.className,
+    projects: data.projects,
+    tasks: data.tasks
+  };
+  /* Every export keeps its own name, so backups accumulate instead of the
+     browser silently appending "(1)" and leaving you to guess which is newest. */
+  var name = 'listboard-' + stamp(now) + '.json';
+  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  $('#ioStatus').textContent = 'Exported ' + plural(data.tasks.length, 'task') + ' to ' + name;
+}
+
+function importData(file) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    var incoming;
+    try { incoming = JSON.parse(reader.result); } catch (e) {
+      $('#ioStatus').textContent = 'That file is not valid JSON.'; return;
+    }
+    if (!incoming || !Array.isArray(incoming.tasks)) {
+      $('#ioStatus').textContent = 'That file has no Listboard tasks in it.'; return;
+    }
+    /* Merge, never replace. A task already here is only overwritten by a copy
+       that says it was updated later, so importing an old backup cannot undo
+       today's work. */
+    var addedP = 0, addedT = 0, updatedT = 0;
+    (Array.isArray(incoming.projects) ? incoming.projects : []).forEach(function (p) {
+      if (!p || !p.id || projectById(p.id)) return;
+      data.projects.push({
+        id: String(p.id), name: String(p.name || 'Untitled'),
+        created: p.created || nowISO(), archived: !!p.archived
+      });
+      addedP++;
+    });
+    incoming.tasks.forEach(function (raw) {
+      if (!raw || !raw.id) return;
+      var t = normalizeTask(raw);
+      var have = taskById(t.id);
+      if (!have) { data.tasks.push(t); addedT++; return; }
+      if ((t.updated || '') > (have.updated || '')) {
+        var i = data.tasks.indexOf(have);
+        data.tasks[i] = t;
+        updatedT++;
+      }
+    });
+    save();
+    if (incoming.theme === 'light' || incoming.theme === 'dark') setTheme(incoming.theme);
+    renderAll();
+    $('#ioStatus').textContent = (addedT || updatedT || addedP)
+      ? 'Imported: ' + addedT + ' new, ' + updatedT + ' updated, ' + addedP + ' new projects.'
+      : 'Nothing to add; this file matched what is already here.';
+    toast('Backup imported');
+  };
+  reader.readAsText(file);
+}
+
+/* ── Quick add ────────────────────────────────────────────────────────── */
+function quickAdd() {
+  var box = $('#quickNote');
+  var text = box.value.trim();
+  if (!text) { box.focus(); return; }
+  var parsed = extractTags(text);
+  var t = addTask({
+    project: currentProject(),
+    note: parsed.note,
+    tags: parsed.tags,
+    status: 'new'
+  });
+  box.value = '';
+  autoGrow(box);
+  renderAll();
+  toast('Added to New', 'Open', function () { openTask(t.id); });
+}
+
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.4) + 'px';
+}
+
+/* ── Wiring ───────────────────────────────────────────────────────────── */
+function init() {
+  /* Seed a first project so an empty install has somewhere obvious to put
+     things. Only ever on a truly empty board, never on a cleared one. */
+  if (!data.projects.length && !data.tasks.length && !storageGet(KEY_DATA)) {
+    data.projects.push({ id: uid(), name: 'General', created: nowISO(), archived: false });
+    ui.project = data.projects[0].id;
+    save(); saveUI();
+  }
+
+  setTheme(storageGet(KEY_THEME) === 'light' ? 'light' : 'dark');
+
+  /* Tabs */
+  $$('.tabs button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var name = b.dataset.tab;
+      /* On a phone the Settings button is the More tab and opens the sheet
+         instead of a page. */
+      if (name === 'settings' && window.matchMedia('(max-width: 700px)').matches) {
+        var sheet = $('#moreSheet');
+        var openNow = !sheet.classList.contains('open');
+        sheet.classList.toggle('open', openNow);
+        b.classList.toggle('sheet-open', openNow);
+        return;
+      }
+      location.hash = name;
+      if ((location.hash || '').replace(/^#/, '') !== name) route();
+    });
+  });
+  $$('.more-tile').forEach(function (b) {
+    b.addEventListener('click', function () { location.hash = b.dataset.more; });
+  });
+
+  /* Board */
+  $('#projectPicker').addEventListener('change', function () {
+    if (this.value === '__new') {
+      var name = window.prompt('Name the new project');
+      var p = name && addProject(name);
+      ui.project = p ? p.id : currentProject();
+    } else {
+      ui.project = this.value;
+    }
+    saveUI();
+    boardFilter.tag = '';
+    renderAll();
+  });
+  $('#btnNewTask').addEventListener('click', function () { $('#quickNote').focus(); });
+  $('#btnQuickAdd').addEventListener('click', quickAdd);
+  $('#quickNote').addEventListener('input', function () { autoGrow(this); });
+  $('#quickNote').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); quickAdd(); }
+  });
+  $('#boardSearch').addEventListener('input', function () {
+    boardFilter.q = this.value.trim().toLowerCase();
+    renderBoard();
+  });
+  $('#boardTagChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-btag]');
+    if (!b) return;
+    boardFilter.tag = boardFilter.tag === b.dataset.btag ? '' : b.dataset.btag;
+    renderBoard();
+  });
+  $('#board').addEventListener('click', function (e) {
+    if (e.target.closest('[data-showall]')) { ui.showAllDone = true; saveUI(); renderBoard(); }
+  });
+
+  /* Cards: pointer drag, with a plain tap falling through to opening one */
+  var board = $('#board');
+  board.addEventListener('pointerdown', onPointerDown);
+  board.addEventListener('pointermove', onPointerMove);
+  board.addEventListener('pointerup', onPointerUp);
+  board.addEventListener('pointercancel', onPointerCancel);
+  board.addEventListener('contextmenu', function (e) {
+    /* A long press on a phone would otherwise raise the text menu mid-drag */
+    if (drag && drag.active) e.preventDefault();
+  });
+
+  /* List */
+  $('#listSearch').addEventListener('input', function () {
+    listFilter.q = this.value.trim().toLowerCase();
+    renderList();
+  });
+  $('#tab-list').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-lproj], [data-lstatus], [data-ltag]');
+    if (b) {
+      if (b.dataset.lproj !== undefined) listFilter.project = b.dataset.lproj;
+      if (b.dataset.lstatus !== undefined) listFilter.status = b.dataset.lstatus;
+      if (b.dataset.ltag !== undefined) listFilter.tag = b.dataset.ltag;
+      renderList();
+      return;
+    }
+    var row = e.target.closest('.trow');
+    if (row) openTask(row.dataset.id);
+  });
+  $('#btnClearListFilters').addEventListener('click', function () {
+    listFilter = { q: '', project: '', status: '', tag: '' };
+    $('#listSearch').value = '';
+    renderList();
+  });
+
+  /* Projects */
+  $('#btnAddProject').addEventListener('click', function () {
+    var inp = $('#newProjectName');
+    var p = addProject(inp.value);
+    if (p) { inp.value = ''; ui.project = p.id; saveUI(); renderAll(); toast('Project added'); }
+  });
+  $('#newProjectName').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); $('#btnAddProject').click(); }
+  });
+  $('#projectRows').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-pact]');
+    if (!b) return;
+    var p = projectById(b.closest('[data-pid]').dataset.pid);
+    if (!p) return;
+    if (b.dataset.pact === 'open') { ui.project = p.id; saveUI(); location.hash = 'board'; renderAll(); route(); }
+    if (b.dataset.pact === 'rename') {
+      var name = window.prompt('Rename project', p.name);
+      if (name && name.trim()) { p.name = name.trim(); save(); renderAll(); }
+    }
+    if (b.dataset.pact === 'archive') {
+      p.archived = !p.archived;
+      if (p.archived && ui.project === p.id) { ui.project = ''; saveUI(); }
+      save(); renderAll();
+      toast(p.archived ? 'Archived. Its tasks are untouched.' : 'Unarchived');
+    }
+    if (b.dataset.pact === 'delete') deleteProject(p);
+  });
+
+  /* Tags */
+  $('#tagRows').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-tact]');
+    if (!b) return;
+    var tag = b.closest('[data-tag]').dataset.tag;
+    if (b.dataset.tact === 'filter') {
+      listFilter = { q: '', project: '', status: '', tag: tag };
+      $('#listSearch').value = '';
+      renderList();
+      location.hash = 'list';
+    }
+    if (b.dataset.tact === 'rename') {
+      var to = window.prompt('Rename #' + tag + ' to', tag);
+      if (to) renameTagEverywhere(tag, to);
+    }
+    if (b.dataset.tact === 'remove') removeTagEverywhere(tag);
+  });
+
+  /* Settings */
+  $('#btnThemeDark').addEventListener('click', function () { setTheme('dark'); });
+  $('#btnThemeLight').addEventListener('click', function () { setTheme('light'); });
+  $('#btnExport').addEventListener('click', exportData);
+  $('#btnImport').addEventListener('click', function () { $('#importFile').click(); });
+  $('#importFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) importData(this.files[0]);
+    this.value = '';
+  });
+  $('#btnPurgeClosed').addEventListener('click', function () {
+    var n = data.tasks.filter(function (t) { return t.status === 'done'; }).length;
+    if (!n) { toast('Nothing closed to delete'); return; }
+    if (!window.confirm('Permanently delete ' + plural(n, 'closed task') + '? This cannot be undone.')) return;
+    data.tasks = data.tasks.filter(function (t) { return t.status !== 'done'; });
+    save(); renderAll();
+    toast(plural(n, 'task') + ' deleted');
+  });
+  $('#btnResetAll').addEventListener('click', function () {
+    if (!window.confirm('Delete every task and project in this browser? This cannot be undone.')) return;
+    if (!window.confirm('Really delete everything? Export a backup first if you are not sure.')) return;
+    data = emptyData();
+    ui = {};
+    save(); saveUI(); renderAll();
+    toast('Everything deleted');
+  });
+
+  /* Drawer */
+  $('#drawerScrim').addEventListener('click', closeDrawer);
+
+  /* Keyboard */
+  document.addEventListener('keydown', function (e) {
+    var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (e.key === 'Escape') {
+      if (openId) { closeDrawer(); return; }
+      if ($('#moreSheet').classList.contains('open')) { closeMore(); return; }
+      if (typing) document.activeElement.blur();
+      return;
+    }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'n') {
+      e.preventDefault();
+      if (!$('#tab-board').classList.contains('active')) location.hash = 'board';
+      $('#quickNote').focus();
+    }
+    if (e.key === '/') {
+      e.preventDefault();
+      var box = $('#tab-list').classList.contains('active') ? $('#listSearch') : $('#boardSearch');
+      if (!$('#tab-board').classList.contains('active') && !$('#tab-list').classList.contains('active')) {
+        location.hash = 'board'; box = $('#boardSearch');
+      }
+      box.focus();
+    }
+  });
+
+  window.addEventListener('hashchange', route);
+  renderAll();
+  route();
+}
+
+document.addEventListener('DOMContentLoaded', init);

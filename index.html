@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Listboard</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=1">
+<meta name="description" content="A kanban task board for your projects. Notes, titles, tags, comments and drag-and-drop between New, In progress and Closed. Everything is stored in this browser.">
+<meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Listboard">
+<link rel="stylesheet" href="css/style.css?v=1">
+<script>
+  /* Set the theme before first paint so a dark-mode load never flashes white.
+     Dark is the default; light is only used if it was explicitly chosen. */
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('lb-theme'); } catch (e) {}
+    document.documentElement.className = (t === 'light') ? 'light' : 'dark';
+  })();
+</script>
+</head>
+<body>
+<div class="app">
+
+<nav class="tabs">
+  <div class="brand">
+    <span class="brand-logo" aria-hidden="true">
+      <svg viewBox="0 0 40 40">
+        <rect x="4" y="7" width="9" height="26" rx="2.6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+        <rect x="15.5" y="7" width="9" height="26" rx="2.6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+        <rect x="27" y="7" width="9" height="26" rx="2.6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+        <rect x="6.6" y="10" width="3.8" height="5" rx="1.4" fill="currentColor"/>
+        <rect x="18.1" y="10" width="3.8" height="5" rx="1.4" fill="currentColor"/>
+        <rect x="18.1" y="17" width="3.8" height="5" rx="1.4" fill="currentColor"/>
+        <rect x="29.6" y="10" width="3.8" height="5" rx="1.4" fill="currentColor"/>
+      </svg>
+    </span>
+    <span class="brand-name">Listboard</span>
+  </div>
+
+  <div class="tab-list">
+    <button class="active" data-tab="board" title="The kanban board for the current project">
+      <svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v13h-4z"/></svg>
+      <span class="tab-label">Board <span id="boardCount" class="pill"></span></span></button>
+    <button data-tab="list" title="Every task, searchable and filterable">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <span class="tab-label">List <span id="listCount" class="pill"></span></span></button>
+    <button data-tab="projects" title="Add, rename, archive and reorder projects">
+      <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="tab-label">Projects <span id="projCount" class="pill"></span></span></button>
+    <button data-tab="tags" title="Every tag in use, and what is filed under it">
+      <svg viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg>
+      <span class="tab-label">Tags <span id="tagCount" class="pill"></span></span></button>
+  </div>
+
+  <!-- Settings sits in its own ruled-off block at the foot of the rail. On a
+       phone the block is display:contents, so the button falls back into the
+       bottom bar, where it becomes the More tab. -->
+  <div class="tabs-foot">
+    <button data-tab="settings" title="Theme, backups and storage">
+      <svg class="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <svg class="ic-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4z"/><path d="M13 4h7v7h-7z"/><path d="M4 13h7v7H4z"/><path d="M13 13h7v7h-7z"/></svg>
+      <span class="tab-label"><span class="lbl-wide">Settings</span><span class="lbl-narrow">More</span></span></button>
+  </div>
+</nav>
+
+<!-- The phone's stand-in for the parts of the rail the bottom bar has no room
+     for. Opened by the More tab. -->
+<div class="more-sheet" id="moreSheet">
+  <div class="more-label">More</div>
+  <div class="more-grid">
+    <button class="more-tile" type="button" data-more="tags">
+      <span class="tile-mark"><svg viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg></span><span>Tags</span></button>
+    <button class="more-tile" type="button" data-more="settings">
+      <span class="tile-mark"><svg class="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span>Settings</span></button>
+  </div>
+</div>
+
+<main class="content">
+<h1><span class="brand-logo" aria-hidden="true">
+  <svg viewBox="0 0 40 40">
+    <rect x="4" y="7" width="9" height="26" rx="2.6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+    <rect x="15.5" y="7" width="9" height="26" rx="2.6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+    <rect x="27" y="7" width="9" height="26" rx="2.6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+  </svg></span>Listboard</h1>
+<div class="sub">Tasks for your projects, saved in this browser.</div>
+
+<!-- Board -->
+<div class="tabpage maxw active" id="tab-board">
+  <div class="page-title board-head">
+    <div class="board-head-main">
+      <h2 id="boardTitle">Board</h2>
+      <div class="page-sub" id="boardSub"></div>
+    </div>
+    <div class="board-head-tools">
+      <select id="projectPicker" class="proj-picker" title="Which board to show"></select>
+      <button class="mini" id="btnNewTask" title="Add a task to this board (n)">+ Task</button>
+    </div>
+  </div>
+
+  <section class="panel quickadd">
+    <textarea id="quickNote" rows="1" placeholder="Jot a task and press Enter. Shift+Enter for a new line, #tag to tag it."></textarea>
+    <div class="quickadd-foot">
+      <span class="hint">A note is all a task needs. Title, tags and comments can come later.</span>
+      <button class="mini primary" id="btnQuickAdd">Add</button>
+    </div>
+  </section>
+
+  <section class="panel filters board-filters">
+    <input type="search" id="boardSearch" placeholder="Filter this board by text or tag..." autocomplete="off">
+    <div class="filter-row">
+      <div class="filter-label">Tags</div>
+      <div class="chips" id="boardTagChips"></div>
+    </div>
+  </section>
+
+  <div class="board" id="board"></div>
+</div>
+
+<!-- List -->
+<div class="tabpage maxw" id="tab-list">
+  <div class="page-title">
+    <h2>All tasks</h2>
+    <div class="page-sub">Every task across every project, most recently touched first.</div>
+  </div>
+
+  <section class="panel filters">
+    <input type="search" id="listSearch" placeholder="Search titles, notes, comments and tags..." autocomplete="off">
+    <div class="filter-row">
+      <div class="filter-label">Project</div>
+      <div class="chips" id="listProjChips"></div>
+    </div>
+    <div class="filter-row">
+      <div class="filter-label">Status</div>
+      <div class="chips" id="listStatusChips"></div>
+    </div>
+    <div class="filter-row">
+      <div class="filter-label">Tags</div>
+      <div class="chips" id="listTagChips"></div>
+    </div>
+    <div class="filter-foot">
+      <span id="listResultCount"></span>
+      <span class="foot-actions">
+        <button class="mini" id="btnClearListFilters" title="Clear the search and every filter">Reset</button>
+      </span>
+    </div>
+  </section>
+
+  <div id="listRows"></div>
+</div>
+
+<!-- Projects -->
+<div class="tabpage maxw" id="tab-projects">
+  <div class="page-title">
+    <h2>Projects</h2>
+    <div class="page-sub">Each project gets its own board. Archiving hides a project without touching its tasks.</div>
+  </div>
+
+  <section class="panel">
+    <div class="mod-h">New project</div>
+    <div class="row wrap">
+      <input type="text" id="newProjectName" placeholder="Project name" maxlength="60">
+      <button class="mini primary" id="btnAddProject">Add project</button>
+    </div>
+  </section>
+
+  <div id="projectRows"></div>
+</div>
+
+<!-- Tags -->
+<div class="tabpage maxw" id="tab-tags">
+  <div class="page-title">
+    <h2>Tags</h2>
+    <div class="page-sub">Every tag in use. Renaming one here rewrites it on every task that carries it.</div>
+  </div>
+  <div id="tagRows"></div>
+</div>
+
+<!-- Settings -->
+<div class="tabpage maxw" id="tab-settings">
+  <div class="page-title">
+    <h2>Settings</h2>
+    <div class="page-sub">Appearance, backups, and where your tasks actually live.</div>
+  </div>
+
+  <div class="twocol">
+    <section class="panel">
+      <div class="mod-h">Theme</div>
+      <p class="lede">Dark is the default. Your choice is remembered in this browser.</p>
+      <div class="row">
+        <button id="btnThemeDark">Dark</button>
+        <button id="btnThemeLight">Light</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="mod-h">Storage</div>
+      <div id="storageStatus" class="hint"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="mod-h">Backup <small>everything, as one JSON file</small></div>
+    <p class="lede">
+      Tasks live only in this browser, so they do not follow you to another
+      machine and clearing site data takes them with it. Export writes the whole
+      board out; import merges a file back in without deleting anything that is
+      already here.
+    </p>
+    <div class="row wrap">
+      <button id="btnExport">Export backup</button>
+      <button id="btnImport">Import backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <div id="ioStatus" class="hint" style="margin-top:.6rem"></div>
+  </section>
+
+  <section class="panel">
+    <div class="mod-h">Danger zone</div>
+    <p class="lede">These are permanent and are not covered by undo. Export first.</p>
+    <div class="row wrap">
+      <button class="danger" id="btnPurgeClosed">Delete all closed tasks</button>
+      <button class="danger" id="btnResetAll">Delete everything</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="mod-h">Keyboard</div>
+    <ul class="keys">
+      <li><kbd>n</kbd> new task on the current board</li>
+      <li><kbd>/</kbd> jump to the search box</li>
+      <li><kbd>Esc</kbd> close the task panel or the More sheet</li>
+      <li><kbd>Enter</kbd> in the quick-add box files the task</li>
+    </ul>
+  </section>
+</div>
+
+</main>
+</div>
+
+<!-- The task detail panel: a right-hand drawer on desktop, a full sheet on a
+     phone. One element, reused for whichever task is open. -->
+<div class="drawer-scrim" id="drawerScrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Task detail"></aside>
+
+<div id="toast"></div>
+
+<script src="js/app.js?v=1"></script>
+</body>
+</html>
