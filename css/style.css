@@ -256,6 +256,23 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
   padding: .6rem; display: flex; flex-direction: column; gap: .5rem;
   min-height: 90px;
 }
+/* Something from outside is being dragged over the board. Every lane lifts a
+   little so it reads as "any of these will take it", and the one under the
+   pointer is called out below. */
+.board.drop-armed .col { border-style: dashed; border-color: var(--muted); }
+.col.drop-create {
+  border-style: solid !important; border-color: var(--accent) !important;
+  background: var(--accent-wash);
+}
+.col.drop-create .col-body::before {
+  content: "Drop to add a task here";
+  display: block; text-align: center; padding: .8rem .5rem;
+  border: 1px dashed var(--accent); border-radius: 8px;
+  color: var(--accent); font-size: .82rem; font-weight: 600;
+}
+/* Nothing inside a lane may swallow the drag events the lane needs to see */
+.board.drop-armed .col * { pointer-events: none; }
+
 /* The live drop target while a card is being dragged over it */
 .col.drop-into { border-color: var(--accent); }
 .col.drop-into .col-body { background: var(--accent-wash); border-radius: 0 0 9px 9px; }

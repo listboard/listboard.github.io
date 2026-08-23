@@ -15,6 +15,11 @@ Live at **https://listboard.github.io**
 - **Three lanes.** New → In progress → Closed, with drag-and-drop between them
   and reordering inside them. Dragging works with a mouse and with a finger
   (long press to pick a card up).
+- **Drop things in.** Drag text, a link, an image or a file from anywhere
+  onto a lane and it becomes a task there. Text becomes the note (with any
+  `#tags` picked out), a link or image becomes its URL, and the link text or
+  image alt text becomes the title. Several links at once become several
+  tasks.
 - **Comments.** Every task keeps a running thread of comments, plus a history
   of when it was created, moved, archived and commented on.
 - **An archive, not a bin.** Archiving is how a task leaves a board. It keeps

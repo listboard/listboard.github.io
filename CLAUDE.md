@@ -100,6 +100,34 @@ of the code can assume the fields exist and are the right type.
 - Anything that changes a task calls `touch()` so the List page's sort and the
   import merge both stay honest.
 
+## Two drag systems, deliberately
+The board runs both drag APIs at once, and they must not be merged:
+
+- **Moving cards is pointer-based** (`onPointerDown` and friends), because
+  HTML5 drag-and-drop never fires for touch.
+- **Dropping things in from outside is HTML5** (`dragenter`/`dragover`/
+  `drop` on `#board`), because that is the only API that receives content
+  from other windows, the desktop and other apps.
+
+They never collide: a card never fires `dragstart`, so anything reaching the
+HTML5 handlers came from outside.
+
+Notes on the drop path:
+
+- `dragover` **must** call `preventDefault()` or no drop event follows.
+- The document-level `dragover`/`drop` handlers are a safety net. Without
+  them, a URL dropped anywhere else on the page navigates the browser away
+  from the app. Keep them.
+- `dragleave` fires for every child crossed, hence the `dropDepth` counter
+  rather than clearing highlight on the first leave.
+- A dropped payload is **untrusted text**. Store it as text, escape at render
+  like any other note. `dropMetaFromHTML()` parses dropped markup with
+  DOMParser, which runs no scripts, and pulls out only text and a src.
+  Never inject dropped HTML, and never fetch a dropped URL.
+- A dropped file gives up only its name: browsers do not expose the path,
+  and the bytes are far too big for localStorage. The name is the note.
+- URLs skip tag extraction, or a `#fragment` would become a tag.
+
 ## Drag and drop
 Pointer events, not HTML5 drag-and-drop, because the HTML5 API never fires for
 touch. One code path serves mouse and finger: mouse drags start after 6px of

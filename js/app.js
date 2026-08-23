@@ -1210,6 +1210,119 @@ function onPointerCancel() {
   if (drag.active) endDrag(false); else drag = null;
 }
 
+/* ── Dropping things in from outside ──────────────────────────────────────
+   Text, links, images and files dragged from another window, the desktop or
+   another app land on a lane and become tasks there.
+
+   This is the HTML5 drag-and-drop API, unlike the card dragging above, which
+   is pointer-based. The two never collide: cards never fire `dragstart`, so
+   anything arriving here came from outside the board.
+
+   Everything a drop carries is untrusted text. It is stored as text and
+   escaped at render like any other note; nothing here fetches a dropped URL
+   or renders dropped markup. */
+
+var MAX_DROP = 20;
+
+/* A link drag carries markup as well as the URL, and that markup usually holds
+   the one thing the URL does not: what the link was called. Parsed, never
+   rendered - DOMParser does not run scripts, and only text and the src come
+   back out. */
+function dropMetaFromHTML(html) {
+  var meta = { title: '', src: '' };
+  if (!html || !window.DOMParser) return meta;
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var a = doc.querySelector('a[href]');
+    var img = doc.querySelector('img[src]');
+    if (img) {
+      meta.src = img.getAttribute('src') || '';
+      meta.title = (img.getAttribute('alt') || '').trim();
+    }
+    if (a && !meta.title) meta.title = (a.textContent || '').trim().replace(/\s+/g, ' ');
+    if (!meta.src && a) meta.src = a.getAttribute('href') || '';
+    meta.title = meta.title.slice(0, 140);
+  } catch (e) { /* malformed markup is just a drop with no title */ }
+  return meta;
+}
+
+function htmlToText(html) {
+  if (!html || !window.DOMParser) return '';
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    return (doc.body.textContent || '').trim().replace(/\n{3,}/g, '\n\n');
+  } catch (e) { return ''; }
+}
+
+function isURL(s) { return /^(https?|file|ftp):\/\/\S+$/i.test(s); }
+
+/* Works out what a drop is worth as tasks. Returns [{title, note, tags}]. */
+function tasksFromDrop(dt) {
+  if (!dt) return [];
+  var html = '';
+  try { html = dt.getData('text/html') || ''; } catch (e) {}
+  var plain = '';
+  try { plain = (dt.getData('text/plain') || '').trim(); } catch (e) {}
+  var uriRaw = '';
+  try { uriRaw = dt.getData('text/uri-list') || dt.getData('URL') || ''; } catch (e) {}
+
+  /* text/uri-list is newline separated and allows # comment lines */
+  var uris = uriRaw.split(/\r?\n/).map(function (s) { return s.trim(); })
+    .filter(function (s) { return s && s.charAt(0) !== '#'; });
+  var meta = dropMetaFromHTML(html);
+
+  if (uris.length) {
+    return uris.slice(0, MAX_DROP).map(function (u, i) {
+      /* The link text titles the first one only: with several URLs the markup
+         describes the set, not each member. */
+      return { title: (i === 0 && meta.title && meta.title !== u) ? meta.title : '', note: u };
+    });
+  }
+
+  /* A file from the desktop. The browser only ever exposes the name, never
+     the path, and the file itself is far too big for localStorage, so the
+     name is genuinely all there is to keep. */
+  var files = dt.files ? Array.prototype.slice.call(dt.files) : [];
+  if (files.length) {
+    return files.slice(0, MAX_DROP).map(function (f) { return { title: '', note: f.name }; });
+  }
+
+  if (plain) {
+    /* A bare URL dropped as text is still a URL, and must not have its
+       fragment mistaken for a tag. */
+    if (isURL(plain)) return [{ title: meta.title && meta.title !== plain ? meta.title : '', note: plain }];
+    var parsed = extractTags(plain);
+    return [{ title: '', note: parsed.note, tags: parsed.tags }];
+  }
+
+  var text = htmlToText(html);
+  if (text) {
+    var p = extractTags(text);
+    return [{ title: '', note: p.note, tags: p.tags }];
+  }
+  return [];
+}
+
+function handleDrop(dt, status) {
+  var made = tasksFromDrop(dt);
+  if (!made.length) { toast('Nothing in that drop to make a task from'); return; }
+  var created = made.map(function (m) {
+    return addTask({
+      project: currentProject(),
+      title: m.title || '',
+      note: m.note,
+      tags: m.tags || [],
+      status: status
+    });
+  });
+  renderAll();
+  if (created.length === 1) {
+    toast('Added to ' + statusLabel(status), 'Open', function () { openTask(created[0].id); });
+  } else {
+    toast(plural(created.length, 'task') + ' added to ' + statusLabel(status));
+  }
+}
+
 /* ── Projects and tags: actions ───────────────────────────────────────── */
 function addProject(name) {
   name = String(name || '').trim();
@@ -1436,6 +1549,58 @@ function init() {
     /* A long press on a phone would otherwise raise the text menu mid-drag */
     if (drag && drag.active) e.preventDefault();
   });
+
+  /* Dropping text, links, images and files in from outside.
+
+     The document-level handlers are the safety net: without them a URL
+     dropped anywhere else on the page makes the browser navigate away from
+     the app, which is a horrible surprise even though nothing is lost. */
+  function dropCarriesSomething(e) {
+    var types = e.dataTransfer && e.dataTransfer.types;
+    if (!types) return false;
+    return Array.prototype.indexOf.call(types, 'text/plain') >= 0 ||
+      Array.prototype.indexOf.call(types, 'text/uri-list') >= 0 ||
+      Array.prototype.indexOf.call(types, 'text/html') >= 0 ||
+      Array.prototype.indexOf.call(types, 'Files') >= 0;
+  }
+
+  document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.addEventListener('drop', function (e) { e.preventDefault(); });
+
+  var dropDepth = 0;
+  board.addEventListener('dragenter', function (e) {
+    if (!dropCarriesSomething(e)) return;
+    e.preventDefault();
+    dropDepth++;
+    board.classList.add('drop-armed');
+  });
+  board.addEventListener('dragover', function (e) {
+    if (!dropCarriesSomething(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    var col = e.target.closest ? e.target.closest('.col') : null;
+    $$('.col').forEach(function (c) { c.classList.toggle('drop-create', c === col); });
+  });
+  board.addEventListener('dragleave', function () {
+    /* dragleave fires for every child crossed, so count entries and exits
+       rather than clearing on the first one. */
+    dropDepth = Math.max(0, dropDepth - 1);
+    if (!dropDepth) clearDropState();
+  });
+  board.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var col = e.target.closest ? e.target.closest('.col') : null;
+    clearDropState();
+    /* Dropped on the board but between the lanes: New is where new things go. */
+    handleDrop(e.dataTransfer, col ? col.dataset.status : 'new');
+  });
+
+  function clearDropState() {
+    dropDepth = 0;
+    board.classList.remove('drop-armed');
+    $$('.col').forEach(function (c) { c.classList.remove('drop-create'); });
+  }
 
   /* List */
   $('#listSearch').addEventListener('input', function () {
