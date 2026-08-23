@@ -383,7 +383,12 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
 .selbar-acts { display: flex; gap: .3rem; flex-wrap: wrap; flex: 1; }
 .selbar button[disabled] { opacity: .45; cursor: default; }
 .selbar button[disabled]:hover { border-color: var(--line); color: var(--ink); }
-body.dragging-card { cursor: grabbing; }
+/* Belt and braces with the touchmove blocker in app.js: while a card is in
+   the air nothing on the page offers the browser a pan to take over. */
+body.dragging-card, body.dragging-card .board, body.dragging-card .card {
+  touch-action: none;
+}
+body.dragging-card { cursor: grabbing; overscroll-behavior: contain; }
 body.dragging-card * { cursor: grabbing !important; }
 /* While a card is actually in the air, nothing anywhere is selectable. The
    card itself is covered above; this catches the text a finger sweeps across
