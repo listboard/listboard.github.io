@@ -17,7 +17,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=5">
+<link rel="stylesheet" href="css/style.css?v=6">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -115,7 +115,11 @@
   </section>
 
   <section class="panel filters board-filters">
-    <input type="search" id="boardSearch" placeholder="Filter this board by text or tag..." autocomplete="off">
+    <input type="search" id="boardSearch" placeholder="Filter this board: text, #tag or @project..." autocomplete="off">
+    <div class="filter-row" id="boardProjRow">
+      <div class="filter-label">Projects</div>
+      <div class="chips" id="boardProjChips"></div>
+    </div>
     <div class="filter-row">
       <div class="filter-label">Tags</div>
       <div class="chips" id="boardTagChips"></div>
@@ -285,7 +289,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=6"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->

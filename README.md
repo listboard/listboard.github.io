@@ -38,8 +38,10 @@ to sign up for.
   Listboard wherever you are. Case, spaces and punctuation are ignored when
   matching, an unknown name creates the project (with an undo), and naming an
   archived one brings it back. Works in dropped text too.
-- **Search and filter.** Filter one board by text or tag; search every task
-  everywhere from the List page, filtered by project, status and tag.
+- **Search and filter.** The board filters by project pills, tag pills and
+  free text, and the filter box takes the same sigils as quick add, so
+  `@alpha #ui` narrows to one project and one tag without touching the pills.
+  The List page searches every task everywhere, by project, status and tag.
 - **Backups.** Export the whole board as one JSON file, named
   `listboard-YYYY-MM-DD-HHMMSS.json`. Import merges a file back in and never
   deletes; drop the file onto Settings, or use the picker. On iPad and iPhone
