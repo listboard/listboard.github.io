@@ -983,6 +983,12 @@ function renderPicker() {
   sel.value = cur;
 }
 
+/* A project reads like a tag but bolder, and always with its @, matching the
+   sigil that files and filters it. */
+function projTagHTML(id) {
+  return '<span class="tag proj-tag" title="Project">@' + esc(projectName(id)) + '</span>';
+}
+
 function cardHTML(t) {
   var h = '<div class="card' + (isSelected(t.id) ? ' selected' : '') +
     '" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">';
@@ -1005,7 +1011,9 @@ function cardHTML(t) {
       t.comments.length + '</span>';
   }
   if (currentProject() === '' && t.project) {
-    foot += '<span class="meta" title="Project">' + esc(projectName(t.project)) + '</span>';
+    /* Written the way it is typed, so the badge on a card and the @project you
+       would type to file or filter it are visibly the same thing. */
+    foot += projTagHTML(t.project);
   }
   if (foot) h += '<div class="card-foot">' + foot + '</div>';
   return h + '</div>';
@@ -1156,7 +1164,7 @@ function renderBoardTagChips() {
    A chip that would yield nothing is dimmed rather than hidden, so the shape
    of the data stays visible instead of the row twitching as you type. */
 function chipHTML(attr, value, label, on, title, n) {
-  return '<button class="chip' + (on ? ' on' : '') + (!n && !on ? ' empty' : '') +
+  return '<button class="chip' + (on ? ' on' : '') + (!n && !on ? ' zero' : '') +
     '" ' + attr + '="' + esc(value) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' +
     esc(label) + '<span class="n">' + n + '</span></button>';
 }
@@ -1248,7 +1256,7 @@ function renderList() {
       '</div></div>' +
       '<div class="trow-side">' +
       '<span class="status-badge">' + esc(statusLabel(t.status)) + '</span>' +
-      '<span class="proj-badge">' + esc(projectName(t.project)) + '</span>' +
+      (t.project ? projTagHTML(t.project) : '') +
       /* Reopening is the point of an archive, so it is one click from the row
          rather than buried in the task panel. */
       (t.archived ? '<button class="mini" data-reopen="' + esc(t.id) + '">Reopen</button>' : '') +

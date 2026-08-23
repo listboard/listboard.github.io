@@ -189,11 +189,26 @@ h1, .sub { display: none; }
 .keys { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: .88rem; }
 .keys li { margin-bottom: .2rem; }
 /* About page prose */
-.steps { margin: 0; padding-left: 1.3rem; color: var(--muted); font-size: .9rem; max-width: 75ch; }
-.steps li { margin-bottom: .6rem; }
-.steps b { color: var(--ink); }
-.plain { margin: 0 0 .8rem; padding-left: 1.1rem; color: var(--muted); font-size: .9rem; max-width: 75ch; }
-.plain li { margin-bottom: .35rem; }
+/* About page: short facts, not paragraphs. */
+.facts { list-style: none; margin: 0 0 .2rem; padding: 0; max-width: 68ch; }
+.facts li {
+  color: var(--muted); font-size: .88rem; line-height: 1.45;
+  padding: .3rem 0; border-bottom: 1px solid var(--line-soft);
+}
+.facts li:last-child { border-bottom: none; }
+.facts b { color: var(--ink); }
+.facts code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0 .3em; color: var(--accent);
+}
+.fact-yes, .fact-no { display: inline-block; width: 1.1em; font-weight: 700; }
+.fact-yes { color: var(--good); }
+.fact-no { color: var(--bad); }
+.about-flow {
+  display: block; width: 100%; max-width: 340px; height: auto;
+  margin: 0 0 .9rem; color: var(--accent);
+}
 .twocol-inner { display: block; }
 kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em;
@@ -284,8 +299,10 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
 .chip .n { opacity: .65; font-size: .74em; margin-left: .25em; font-variant-numeric: tabular-nums; }
 /* A chip that would return nothing: still there, so the shape of the data
    stays visible, but plainly not worth clicking. */
-.chip.empty { opacity: .45; }
-.chip.empty:hover { opacity: 1; }
+/* Named zero, not empty: .empty is the big dashed "nothing here" box, and
+   a chip carrying both classes inherited its 2rem padding and ballooned. */
+.chip.zero { opacity: .45; }
+.chip.zero:hover { opacity: 1; }
 .filter-foot {
   display: flex; align-items: center; justify-content: space-between; gap: .6rem;
   margin-top: .9rem; padding-top: .7rem; border-top: 1px solid var(--line-soft);
@@ -404,6 +421,9 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
   white-space: nowrap;
 }
 .light .tag { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+/* A project is a tag with more weight behind it: same pill, bolder, and
+   always carrying the @ that files and filters it. */
+.proj-tag { font-weight: 700; letter-spacing: -.01em; }
 .meta {
   font-size: .72rem; color: var(--muted); display: inline-flex; align-items: center; gap: .2rem;
 }
@@ -494,7 +514,7 @@ body.dragging-card, body.dragging-card * {
 .archived-badge { border-color: var(--muted); color: var(--muted); }
 .trow.is-archived { background: var(--panel); }
 .trow.is-archived .trow-title { color: var(--muted); }
-.proj-badge { font-size: .72rem; color: var(--muted); }
+/* .proj-badge is gone: list rows use .proj-tag, the same pill as a card. */
 .empty {
   color: var(--muted); font-size: .9rem; text-align: center;
   padding: 2rem 1rem; border: 1px dashed var(--line); border-radius: 10px;
