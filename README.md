@@ -1,9 +1,12 @@
 # Listboard
 
+### ▶ [listboard.github.io](https://listboard.github.io)
+
 A kanban board for project tasks that runs entirely in your browser. No
 account, no server, no build step: one HTML file, one stylesheet, one script.
 
-Live at **https://listboard.github.io**
+Open the link above and start typing; there is nothing to install and nothing
+to sign up for.
 
 ## What it does
 
