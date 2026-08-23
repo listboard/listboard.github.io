@@ -64,6 +64,13 @@
 
 * { box-sizing: border-box; }
 
+/* The browser's own [hidden] rule is display:none at the lowest possible
+   weight, so any author rule that sets display beats it and the element stays
+   on screen. That is exactly how the selection bar, which is display:flex,
+   ended up permanently visible with nothing selected. Stated once here so no
+   future component has to remember. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0; padding: 1.5rem;
   font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
