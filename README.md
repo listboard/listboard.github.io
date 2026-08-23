@@ -52,8 +52,12 @@ That means:
   window. Export/import is the way across.
 - Clearing site data deletes them. So does a browser that evicts script-written
   storage, which Safari does after about seven days without a visit.
-- Nothing is ever sent anywhere. There is no analytics and no network call
-  after the page loads.
+- **No task ever leaves your browser.** Nothing you type is sent anywhere, and
+  the app makes no network call of its own after the page loads.
+- The page does carry a [Statcounter](https://statcounter.com/) tag for visit
+  counts. It measures page views, not content: it has no access to your tasks,
+  which never leave localStorage. It is the one third-party request on the
+  page, and it does not load at all with JavaScript disabled.
 
 The app tries hard not to lose anything: every write is read back and verified,
 data that cannot be parsed is copied to `lb-data-rescued` instead of being

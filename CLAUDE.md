@@ -20,6 +20,18 @@ bullets, the "Run it" file table, and the keyboard table.
 - Bump the `?v=N` query on the css/js links in index.html on every deploy that
   changes those files (cache busting).
 
+## The Statcounter tag is verbatim and stays
+The Statcounter block at the bottom of `index.html` is pasted exactly as the
+service generated it, trailing whitespace and all. Do not reformat it, do not
+tidy its indentation, do not move it out into a file, and do not remove it -
+it is how the site counts traffic, and the project id and security hash in it
+must match the account. Leave it as the last thing before `</body>`.
+
+It is also the one third-party request the page makes. If that ever changes,
+the privacy bullets in README.md have to change with it - they currently
+promise that no task data leaves the browser, and that promise has to stay
+true.
+
 ## Conventions
 - Plain HTML/CSS/vanilla JS only; no frameworks and no build step. ES5-flavoured
   JS (`var`, `function`), matching the sibling repos.
