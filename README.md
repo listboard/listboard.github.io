@@ -34,6 +34,10 @@ to sign up for.
   exists, but only for something already archived.
 - **Tags.** Type `#tag` straight into the quick-add box, or manage tags in the
   task panel. The Tags page renames a tag across every task at once.
+- **Autocomplete.** Typing `#` or `@` opens a list of the tags or projects
+  that already exist, narrowing as you type. Arrow keys to walk it, Tab or
+  Enter to take one, click to pick, Esc to dismiss. It only ever offers what
+  exists, so it saves retyping rather than inventing anything.
 - **`@project` to file it.** `fix the nav @listboard #ui` files the task under
   Listboard wherever you are. Case, spaces and punctuation are ignored when
   matching, an unknown name creates the project (with an undo), and naming an
@@ -120,6 +124,8 @@ is actually doing.
 | <kbd>Shift</kbd>/<kbd>Ctrl</kbd>+click | Add a card to the selection on the board |
 | <kbd>Enter</kbd> | In quick add, files the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line |
 | <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> | In the comment box, posts the comment |
+| <kbd>Tab</kbd> / <kbd>Enter</kbd> | Takes the highlighted autocomplete entry |
+| <kbd>&uarr;</kbd> <kbd>&darr;</kbd> | Walk the autocomplete list |
 
 ## Layout
 

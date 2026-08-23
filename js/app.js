@@ -517,6 +517,176 @@ function extractTags(text) {
   return { note: p.note, tags: p.tags };
 }
 
+/* ── Sigil autocomplete ───────────────────────────────────────────────────
+   Typing #  or @ in the quick-add box or the board filter opens a list of the
+   tags or projects that already exist, filtered as you type. Click one, walk
+   it with the arrow keys, or press Tab or Enter to take the highlighted one,
+   the way an editor completes code.
+
+   Only what already exists is offered. This never invents a tag or a project,
+   it only saves you retyping and misspelling one. */
+
+var AC_MAX = 8;
+var ac = { field: null, menu: null, items: [], idx: -1, from: 0, to: 0, sigil: '' };
+
+/* The token being typed, if the caret is sitting at the end of one. Requires
+   whitespace or the very start before the sigil, exactly like the parser, so
+   an email address never opens a project menu. */
+function acTokenAt(field) {
+  if (typeof field.selectionStart !== 'number') return null;
+  var caret = field.selectionStart;
+  if (caret !== field.selectionEnd) return null;
+  var before = field.value.slice(0, caret);
+  var m = /(^|\s)([#@])([A-Za-z0-9][\w-]*|)$/.exec(before);
+  if (!m) return null;
+  return {
+    sigil: m[2],
+    prefix: m[3],
+    from: caret - m[3].length - 1,   /* the sigil itself */
+    to: caret
+  };
+}
+
+function acCandidates(sigil, prefix) {
+  var p = prefix.toLowerCase();
+  if (sigil === '#') {
+    return allTags().filter(function (g) { return g.tag.indexOf(p) === 0; })
+      .slice(0, AC_MAX)
+      .map(function (g) { return { insert: g.tag, label: g.tag, meta: plural(g.n, 'task') }; });
+  }
+  var want = normalizeName(prefix);
+  return activeProjects().filter(function (pr) {
+    return normalizeName(pr.name).indexOf(want) === 0;
+  }).slice(0, AC_MAX).map(function (pr) {
+    var n = liveTasks().filter(function (t) { return t.project === pr.id; }).length;
+    return {
+      /* Spaces would end the token, so they become hyphens. normalizeName
+         strips those again when the text is parsed, so "@Beta-Site" still
+         resolves to "Beta Site". */
+      insert: pr.name.replace(/\s+/g, '-'),
+      label: pr.name,
+      meta: plural(n, 'task')
+    };
+  });
+}
+
+function acClose() {
+  if (ac.menu && ac.menu.parentNode) ac.menu.parentNode.removeChild(ac.menu);
+  ac.menu = null; ac.items = []; ac.idx = -1; ac.field = null;
+}
+
+function acOpen() { return !!ac.menu; }
+
+function acRender() {
+  ac.menu.innerHTML = ac.items.map(function (it, i) {
+    return '<button type="button" class="ac-item' + (i === ac.idx ? ' on' : '') +
+      '" data-i="' + i + '"><span class="ac-name">' + esc(ac.sigil + it.label) +
+      '</span><span class="ac-meta">' + esc(it.meta) + '</span></button>';
+  }).join('');
+  var on = $('.ac-item.on', ac.menu);
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+}
+
+function acPlace() {
+  var r = ac.field.getBoundingClientRect();
+  /* Fixed to the viewport rather than positioned inside a panel: the filter
+     panels clip their overflow, and a menu that gets cut in half is worse
+     than useless. */
+  ac.menu.style.left = r.left + 'px';
+  ac.menu.style.width = Math.max(180, Math.min(r.width, 320)) + 'px';
+  var below = window.innerHeight - r.bottom;
+  if (below < 180 && r.top > below) {
+    ac.menu.style.top = 'auto';
+    ac.menu.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+  } else {
+    ac.menu.style.bottom = 'auto';
+    ac.menu.style.top = (r.bottom + 4) + 'px';
+  }
+}
+
+function acUpdate(field) {
+  var tok = acTokenAt(field);
+  if (!tok) { acClose(); return; }
+  var items = acCandidates(tok.sigil, tok.prefix);
+  if (!items.length) { acClose(); return; }
+
+  if (!ac.menu) {
+    ac.menu = document.createElement('div');
+    ac.menu.className = 'ac-menu';
+    /* mousedown, not click: the field must not lose focus before the pick
+       lands, or the caret position goes with it. */
+    ac.menu.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+      var b = e.target.closest('.ac-item');
+      if (!b) return;
+      ac.idx = parseInt(b.dataset.i, 10);
+      acAccept();
+    });
+    document.body.appendChild(ac.menu);
+  }
+  ac.field = field;
+  ac.items = items;
+  ac.sigil = tok.sigil;
+  ac.from = tok.from;
+  ac.to = tok.to;
+  /* Keep the highlight on the same entry while it survives the narrowing. */
+  ac.idx = ac.idx >= 0 && ac.idx < items.length ? ac.idx : 0;
+  acRender();
+  acPlace();
+}
+
+function acAccept() {
+  if (!acOpen() || ac.idx < 0) return false;
+  var it = ac.items[ac.idx];
+  var f = ac.field;
+  var text = f.value.slice(0, ac.from) + ac.sigil + it.insert + ' ' + f.value.slice(ac.to);
+  var caret = ac.from + 1 + it.insert.length + 1;
+  var field = f;
+  acClose();
+  field.value = text;
+  field.setSelectionRange(caret, caret);
+  /* Let whatever owns the field react: the filter box refilters, the quick
+     add box regrows. */
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  field.focus();
+  return true;
+}
+
+function acKey(e) {
+  if (!acOpen() || ac.field !== e.target) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    ac.idx = (ac.idx + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length;
+    acRender();
+    return;
+  }
+  if (e.key === 'Tab' || e.key === 'Enter') {
+    /* Shift+Enter is a new line in the note box and must stay one. */
+    if (e.key === 'Enter' && e.shiftKey) { acClose(); return; }
+    e.preventDefault();
+    /* Stops the quick-add box filing the task on the same Enter that took the
+       completion, which would be a very annoying way to lose a keystroke. */
+    e.stopImmediatePropagation();
+    acAccept();
+    return;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    acClose();
+  }
+}
+
+/* Capture, so this runs before the field's own Enter handling. */
+function wireAutocomplete(sel) {
+  var field = $(sel);
+  if (!field) return;
+  field.addEventListener('keydown', acKey, true);
+  field.addEventListener('input', function () { acUpdate(field); });
+  field.addEventListener('click', function () { acUpdate(field); });
+  field.addEventListener('blur', function () { setTimeout(acClose, 0); });
+}
+
 /* ── Filters ──────────────────────────────────────────────────────────── */
 var boardFilter = { q: '', tag: '', project: null };
 var listFilter = { q: '', project: '', status: '', tag: '' };
@@ -592,8 +762,13 @@ function matchesList(t) {
 function setTheme(mode) {
   document.documentElement.className = mode;
   storageSet(KEY_THEME, mode);
-  $('#btnThemeDark').classList.toggle('on', mode === 'dark');
-  $('#btnThemeLight').classList.toggle('on', mode === 'light');
+  [['#btnThemeDark', 'dark'], ['#btnThemeLight', 'light']].forEach(function (pair) {
+    var b = $(pair[0]);
+    b.classList.toggle('on', mode === pair[1]);
+    /* aria-pressed rather than aria-selected: these are toggle buttons in a
+       group, not tabs, and a screen reader should say which one is on. */
+    b.setAttribute('aria-pressed', mode === pair[1] ? 'true' : 'false');
+  });
 }
 
 /* ── Tabs and routing ─────────────────────────────────────────────────── */
@@ -806,10 +981,12 @@ function renderBoardProjChips() {
     .map(function (p) { return p.id; });
   var unfiled = counts[''] || 0;
 
-  /* Nothing to choose between: one project, or a board already scoped to one. */
+  /* Nothing to choose between: one project, or a board already scoped to one.
+     Hiding the row is all this does. It must never clear the filter itself:
+     a render that edits state wipes an @name typed into the filter box, since
+     that works on any board whether or not the pills are worth showing. */
   if (currentProject() !== '' || ids.length + (unfiled ? 1 : 0) < 2) {
     row.hidden = true;
-    if (boardFilter.project !== null) { boardFilter.project = null; }
     return;
   }
   row.hidden = false;
@@ -2064,7 +2241,12 @@ function init() {
       ui.project = this.value;
     }
     saveUI();
+    /* Switching board is where a filter stops making sense, so this is where
+       it is cleared, rather than inside a render. */
     boardFilter.tag = '';
+    boardFilter.project = null;
+    boardFilter.q = '';
+    $('#boardSearch').value = '';
     selection = [];
     renderAll();
   });
@@ -2354,6 +2536,13 @@ function init() {
   renderPersistStatus();
   /* After first paint, so the reminder never lands on a blank screen. */
   setTimeout(maybeNagBackup, 1200);
+
+  wireAutocomplete('#quickNote');
+  wireAutocomplete('#boardSearch');
+  /* The menu is pinned to the viewport, so anything that moves the field has
+     to take it down rather than leave it floating somewhere wrong. */
+  window.addEventListener('resize', acClose);
+  window.addEventListener('scroll', acClose, true);
 
   window.addEventListener('hashchange', route);
   renderAll();

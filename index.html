@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=6">
+<link rel="stylesheet" href="css/style.css?v=7">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -208,9 +208,17 @@
     <section class="panel">
       <div class="mod-h">Theme</div>
       <p class="lede">Dark is the default. Your choice is remembered in this browser.</p>
-      <div class="row">
-        <button id="btnThemeDark">Dark</button>
-        <button id="btnThemeLight">Light</button>
+      <!-- A segmented control rather than two loose buttons, so it reads as
+           one choice with two sides. Matches the sibling autorolltables. -->
+      <div class="segmented" role="group" aria-label="Theme">
+        <button type="button" class="seg" id="btnThemeDark" data-theme="dark" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+          Dark
+        </button>
+        <button type="button" class="seg" id="btnThemeLight" data-theme="light" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/></svg>
+          Light
+        </button>
       </div>
     </section>
 
@@ -295,7 +303,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=6"></script>
+<script src="js/app.js?v=7"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->
