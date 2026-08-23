@@ -88,6 +88,29 @@ of the code can assume the fields exist and are the right type.
 - Anything that changes a task calls `touch()` so the List page's sort and the
   import merge both stay honest.
 
+## Selection
+Shift-click and ctrl/cmd-click toggle a card into `selection`, an array of
+ids that is board-only and deliberately never persisted: a selection is
+something you are doing right now, not state worth surviving a reload.
+
+- Read it through `selectedTasks()`, never the raw array. A card can leave
+  the board underneath a selection (archived from its panel, project
+  switched), and that helper drops the strays instead of counting ghosts.
+- It clears on Esc, on leaving the Board tab and on switching project, and
+  each of those repaints the board so no card is left wearing a selected
+  ring it no longer has.
+- Dragging a selected card drags the whole selection. `moveMany()` relies on
+  sequential `moveTask()` calls against one anchor preserving order - each
+  card lands immediately above the anchor, so the group arrives in sequence.
+
+## Bulk archiving
+`archiveMany()` is the single path for archiving more than one task, and it
+puts the whole batch behind one undo. There are two entry points with
+deliberately different scope: the Closed lane's **Archive all** takes exactly
+what that lane is showing, filter included, so a filtered board can never
+archive something off screen; Settings takes every closed task in every
+project. Keep that distinction if you touch either.
+
 ## Drag and drop
 Pointer events, not HTML5 drag-and-drop, because the HTML5 API never fires for
 touch. One code path serves mouse and finger: mouse drags start after 6px of
