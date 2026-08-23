@@ -30,10 +30,17 @@
   --shadow: rgba(60, 50, 25, .08);
   --panel-90: rgba(247, 246, 241, .9);
 
-  /* One hue per column, used for the header rule and the card's left edge */
-  --st-new: #6b7280;
-  --st-doing: #a16207;
-  --st-done: #3f8f52;
+  /* One hue per lane, used for the header rule and the card's left edge. Any
+     lane can take any of these, so all eight have to clear AA as text on the
+     card background, not just look distinct. */
+  --st-slate: #5c6470;
+  --st-amber: #a16207;
+  --st-green: #3f8f52;
+  --st-blue: #2563eb;
+  --st-purple: #7c3aed;
+  --st-red: #b3402c;
+  --st-teal: #0f766e;
+  --st-pink: #be185d;
 }
 
 .dark {
@@ -57,9 +64,14 @@
   --shadow: rgba(0, 0, 0, .45);
   --panel-90: rgba(27, 26, 23, .9);
 
-  --st-new: #9ca3af;
-  --st-doing: #facc15;
-  --st-done: #4ade80;
+  --st-slate: #9ca3af;
+  --st-amber: #facc15;
+  --st-green: #4ade80;
+  --st-blue: #60a5fa;
+  --st-purple: #c084fc;
+  --st-red: #f87171;
+  --st-teal: #2dd4bf;
+  --st-pink: #f472b6;
 }
 
 * { box-sizing: border-box; }
@@ -249,7 +261,14 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
 }
 
 /* ── The board ─────────────────────────────────────────────────────── */
-.board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; align-items: start; }
+/* Lanes are configurable, so the track count cannot be. Three share the width
+   evenly; add a fourth or a fifth and they keep a workable minimum and the
+   board scrolls sideways rather than squeezing every card into a sliver. */
+.board {
+  display: grid; grid-auto-flow: column;
+  grid-auto-columns: minmax(min(270px, 100%), 1fr);
+  gap: 1rem; align-items: start; overflow-x: auto; padding-bottom: .3rem;
+}
 .col {
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 10px; display: flex; flex-direction: column; min-width: 0;
@@ -443,7 +462,15 @@ body.dragging-card, body.dragging-card * {
 .arow.archived { opacity: .6; }
 .arow-name { font-weight: 600; flex: 1; min-width: 8rem; word-break: break-word; }
 .arow-stats { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.arow-acts { display: flex; gap: .3rem; flex-wrap: wrap; }
+.arow-acts { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
+.st-swatch {
+  width: 10px; height: 22px; border-radius: 3px; background: var(--st); flex-shrink: 0;
+}
+.st-color { width: auto; padding: .25rem .4rem; font-size: .78rem; }
+.st-term {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .78rem; color: var(--muted); white-space: nowrap;
+}
 
 /* ── Task drawer ───────────────────────────────────────────────────── */
 .drawer-scrim {
