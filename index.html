@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=10">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -210,54 +210,54 @@
   </div>
 
   <section class="panel">
-    <div class="mod-h">The short version</div>
-    <p class="lede">
-      Listboard is a kanban board for project tasks that runs entirely in your
-      browser. There is no account, no server and nothing to install. A task
-      needs nothing but a note; everything else is optional.
-    </p>
-    <ol class="steps">
-      <li><b>Jot a task.</b> Type into the box at the top of the Board and press
-        <kbd>Enter</kbd>. Add <b>#tag</b> to tag it and <b>@project</b> to file it
-        on another board, both without leaving the keyboard. Typing either one
-        offers what already exists, so you are not retyping names.</li>
-      <li><b>Move it along.</b> Drag a card between lanes. On a phone or tablet,
-        press and hold for a moment first, then drag. Shift-click several cards
-        to move or archive them together.</li>
-      <li><b>Open it.</b> Click a card for its title, note, tags, project, due
-        date, priority and a running thread of comments, plus a history of
-        everywhere it has been.</li>
-      <li><b>Finish with it.</b> Archiving is how a task leaves a board without
-        leaving Listboard: it keeps its lane, comments and history, and lives
-        under <b>List &rarr; Status &rarr; Archived</b>, where one click reopens it.</li>
-      <li><b>Find it again.</b> The Board filters by project, tag and text. The
-        List searches everything, everywhere, including the archive.</li>
-    </ol>
+    <div class="mod-h">How it works</div>
+    <!-- The board, drawn. Three lanes and the direction of travel says more
+         than a paragraph describing three lanes and a direction of travel. -->
+    <svg class="about-flow" viewBox="0 0 320 74" role="img"
+         aria-label="Three lanes: New, then In progress, then Closed, with tasks moving left to right and out to the archive.">
+      <g fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="4" y="12" width="82" height="50" rx="6"/>
+        <rect x="115" y="12" width="82" height="50" rx="6"/>
+        <rect x="226" y="12" width="82" height="50" rx="6"/>
+        <path d="M92 37h17M203 37h17" stroke-linecap="round"/>
+        <path d="M104 33l5 4-5 4M215 33l5 4-5 4" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g fill="currentColor">
+        <rect x="12" y="22" width="66" height="9" rx="3"/>
+        <rect x="12" y="35" width="66" height="9" rx="3"/>
+        <rect x="123" y="22" width="66" height="9" rx="3"/>
+        <rect x="234" y="22" width="66" height="9" rx="3" opacity=".45"/>
+      </g>
+      <g fill="currentColor" font-size="8" text-anchor="middle" opacity=".8">
+        <text x="45" y="72">New</text>
+        <text x="156" y="72">In progress</text>
+        <text x="267" y="72">Closed</text>
+      </g>
+    </svg>
+    <ul class="facts">
+      <li><b>Jot it.</b> Type in the box on the Board, press <kbd>Enter</kbd>.</li>
+      <li><b>Tag it.</b> <code>#tag</code> to tag, <code>@project</code> to file it
+        elsewhere. Both autocomplete.</li>
+      <li><b>Move it.</b> Drag between lanes. On touch, hold a moment first.
+        Shift-click to move several at once.</li>
+      <li><b>Open it.</b> Click a card for notes, due date, priority and comments.</li>
+      <li><b>Finish it.</b> Archive rather than delete. Reopen any time from
+        <b>List &rarr; Status &rarr; Archived</b>.</li>
+    </ul>
   </section>
 
   <section class="panel">
     <div class="mod-h">Backups <small>the part worth reading</small></div>
-    <p class="lede">
-      Your tasks live in this browser, under one key in its local storage, and
-      nowhere else. Nothing is uploaded and nothing is synced. That is what
-      makes the app account-free, and it is also the whole risk:
-    </p>
-    <ul class="plain">
-      <li>They do not follow you to another browser, another device or a private
-        window. Export and import is the way across.</li>
-      <li><b>Clearing site data deletes them.</b> No web page can prevent that.</li>
-      <li>Mobile Safari discards script-written storage for a site you have not
-        opened in about a week. Adding Listboard to your home screen exempts it,
-        which is the single most useful thing you can do on an iPhone or iPad.</li>
+    <p class="lede">Your tasks live in this browser only. Nothing is uploaded.</p>
+    <ul class="facts">
+      <li><span class="fact-no">&times;</span> Clearing site data deletes them. Nothing can prevent that.</li>
+      <li><span class="fact-no">&times;</span> They do not follow you to another browser or device.</li>
+      <li><span class="fact-no">&times;</span> Mobile Safari discards them after about a week &mdash;
+        unless you add Listboard to your home screen.</li>
+      <li><span class="fact-yes">&check;</span> <b>Export now and then.</b> One JSON file, lanes included.</li>
+      <li><span class="fact-yes">&check;</span> Import merges and never deletes, so an old backup
+        cannot undo new work.</li>
     </ul>
-    <p class="lede">
-      So: <b>export a backup now and then</b>. Settings writes the whole board,
-      lanes included, to one JSON file named for the moment you took it. Import
-      merges a file back in and never deletes anything, so restoring an old
-      backup cannot undo newer work. Drop a backup file straight onto the import
-      box, or use the picker. Settings tells you how long it has been since the
-      last one.
-    </p>
     <div class="row wrap">
       <button class="mini" data-goto="settings">Open Settings</button>
     </div>
@@ -412,7 +412,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=9"></script>
+<script src="js/app.js?v=10"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->
