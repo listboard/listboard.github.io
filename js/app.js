@@ -327,6 +327,51 @@ function setStatus(id, status) {
   moveTask(id, status, lane.length ? lane[0].id : null);
 }
 
+/* ── Selection ────────────────────────────────────────────────────────────
+   Shift-click (or ctrl/cmd-click) puts cards in a selection, which the lane
+   buttons and a drag then act on together. It is board-only and deliberately
+   not persisted: a selection is a thing you are doing right now, not state
+   worth surviving a reload. */
+var selection = [];
+
+function isSelected(id) { return selection.indexOf(id) >= 0; }
+
+function toggleSelect(id) {
+  var i = selection.indexOf(id);
+  if (i >= 0) selection.splice(i, 1); else selection.push(id);
+  renderBoard();
+}
+
+function clearSelection(silent) {
+  if (!selection.length) return;
+  selection = [];
+  renderBoard();
+  if (!silent) toast('Selection cleared');
+}
+
+/* Selected tasks that are still on the board. A card can leave underneath a
+   selection (archived from its panel, project switched), so every consumer
+   reads through this rather than trusting the id list. */
+function selectedTasks() {
+  var onBoard = {};
+  tasksOf(currentProject()).forEach(function (t) { onBoard[t.id] = t; });
+  return selection.map(function (id) { return onBoard[id]; }).filter(Boolean);
+}
+
+/* Moves a whole selection into a lane, keeping the order the cards were in.
+   Sequential single moves against the same anchor preserve that order: each
+   one lands immediately above the anchor, so the group arrives in sequence. */
+function moveMany(ids, status, beforeId) {
+  var order = {};
+  STATUSES.forEach(function (s) {
+    laneOf(currentProject(), s.id).forEach(function (t, i) {
+      order[t.id] = STATUS_IDS.indexOf(s.id) * 10000 + i;
+    });
+  });
+  ids.slice().sort(function (a, b) { return (order[a] || 0) - (order[b] || 0); })
+    .forEach(function (id) { moveTask(id, status, beforeId); });
+}
+
 /* Archiving is the ordinary way a task leaves the board, and it is completely
    reversible: nothing about the task changes except the flag. */
 function archiveTask(id) {
@@ -340,6 +385,33 @@ function archiveTask(id) {
   toast('Archived. Find it under List → Status → Archived.', 'Undo', function () {
     reopenTask(id, true);
   });
+}
+
+/* Archives a batch behind a single undo, so clearing a lane is one action to
+   reverse rather than twenty. Takes tasks, not ids, because every caller has
+   already filtered down to exactly what it means. */
+function archiveMany(tasks, what) {
+  var hit = tasks.filter(function (t) { return !t.archived; });
+  if (!hit.length) return 0;
+  hit.forEach(function (t) {
+    t.archived = true;
+    logActivity(t, 'Archived from ' + statusLabel(t.status));
+    touch(t);
+  });
+  clearSelection(true);
+  save();
+  renderAll();
+  toast(plural(hit.length, what || 'task') + ' archived', 'Undo', function () {
+    hit.forEach(function (t) {
+      t.archived = false;
+      logActivity(t, 'Reopened into ' + statusLabel(t.status));
+      touch(t);
+    });
+    save();
+    renderAll();
+    toast('Put back');
+  });
+  return hit.length;
 }
 
 /* Puts a task back in the lane it left. Silent when it is part of an undo, so
@@ -440,6 +512,11 @@ function setTheme(mode) {
 var TABS = ['board', 'list', 'projects', 'tags', 'settings'];
 
 function showTab(name) {
+  /* A selection belongs to the board you made it on: leaving takes it with
+     you, so you never come back to a stale one you have forgotten about. */
+  /* renderBoard repaints the cards without their selected ring and hides the
+     bar, so coming back to the board never shows a selection that is gone. */
+  if (name !== 'board' && selection.length) { selection = []; renderBoard(); }
   $$('.tabpage').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
   $$('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
   closeMore();
@@ -493,7 +570,8 @@ function renderPicker() {
 }
 
 function cardHTML(t) {
-  var h = '<div class="card" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">';
+  var h = '<div class="card' + (isSelected(t.id) ? ' selected' : '') +
+    '" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">';
   if (t.title) h += '<div class="card-title">' + esc(t.title) + '</div>';
   h += '<div class="card-note' + (t.title ? '' : ' solo') + '">' + esc(t.note) + '</div>';
 
@@ -533,6 +611,8 @@ function renderBoard() {
 
   renderBoardTagChips();
 
+  renderSelBar();
+
   var host = $('#board');
   var html = '';
   STATUSES.forEach(function (s) {
@@ -545,7 +625,14 @@ function renderBoard() {
     }
     html += '<section class="col" data-status="' + s.id + '" style="--st:' + s.hue + '">' +
       '<div class="col-head"><span class="dot"></span>' + esc(s.label) +
-      '<span class="n">' + lane.length + '</span></div>' +
+      '<span class="n">' + lane.length + '</span>' +
+      /* Closed is the lane that piles up, so it gets the one-click way to
+         empty it. It acts on what the lane is actually showing, so a filtered
+         board never archives something you cannot see. */
+      (s.id === 'done' && lane.length
+        ? '<button class="col-act" data-archiveall="1" title="Archive every closed task on this board">Archive all</button>'
+        : '') +
+      '</div>' +
       '<div class="col-body">';
     if (!shown.length) {
       html += '<div class="col-empty">' +
@@ -561,6 +648,25 @@ function renderBoard() {
     html += '</section>';
   });
   host.innerHTML = html;
+}
+
+function renderSelBar() {
+  var picked = selectedTasks();
+  /* An id list that no longer matches anything on the board means the cards
+     went away under it; drop them rather than showing a stale count. */
+  if (picked.length !== selection.length) {
+    selection = picked.map(function (t) { return t.id; });
+  }
+  var bar = $('#selBar');
+  if (!picked.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  $('#selCount').textContent = plural(picked.length, 'task') + ' selected';
+  /* Only lanes the selection is not already entirely in are worth offering. */
+  $('#selActs').innerHTML = STATUSES.map(function (s) {
+    var all = picked.every(function (t) { return t.status === s.id; });
+    return '<button class="mini"' + (all ? ' disabled' : '') +
+      ' data-selmove="' + s.id + '">' + esc(s.label) + '</button>';
+  }).join('') + '<button class="mini" data-selarchive="1">Archive</button>';
 }
 
 function renderBoardTagChips() {
@@ -1082,6 +1188,12 @@ function startDrag(card, x, y) {
   line.className = 'drop-line';
 
   card.classList.add('dragging');
+  /* A multi-card drag shows the whole group lifting, and the ghost carries the
+     count so it is obvious how much is about to land. */
+  if (isSelected(card.dataset.id) && selection.length > 1) {
+    fly.setAttribute('data-count', selectedTasks().length);
+    $$('#board .card.selected').forEach(function (c) { c.classList.add('dragging'); });
+  }
   document.body.classList.add('dragging-card');
 
   drag.active = true;
@@ -1129,6 +1241,7 @@ function moveDrag(x, y) {
 function endDrag(commit) {
   if (drag.fly && drag.fly.parentNode) drag.fly.parentNode.removeChild(drag.fly);
   if (drag.line && drag.line.parentNode) drag.line.parentNode.removeChild(drag.line);
+  $$('#board .card.dragging').forEach(function (c) { c.classList.remove('dragging'); });
   if (drag.card) drag.card.classList.remove('dragging');
   $$('.col').forEach(function (c) { c.classList.remove('drop-into'); });
   document.body.classList.remove('dragging-card');
@@ -1141,6 +1254,18 @@ function endDrag(commit) {
   if (commit && wasActive && id && to) {
     var t = taskById(id);
     var moved = t && t.status !== to;
+    /* Dragging a card that is part of a selection drags the whole selection,
+       which is the only thing that would not surprise someone who just picked
+       five cards on purpose. */
+    if (isSelected(id) && selection.length > 1) {
+      var ids = selectedTasks().map(function (x) { return x.id; });
+      var n = selectedTasks().filter(function (x) { return x.status !== to; }).length;
+      moveMany(ids, to, before || null);
+      clearSelection(true);
+      renderBoard(); renderList(); renderCounts();
+      if (n) toast(plural(n, 'task') + ' → ' + statusLabel(to));
+      return;
+    }
     moveTask(id, to, before || null);
     renderBoard(); renderList(); renderCounts();
     if (moved) toast(statusLabel(to));
@@ -1152,6 +1277,15 @@ function onPointerDown(e) {
   var card = e.target.closest ? e.target.closest('.card') : null;
   if (!card || !$('#board').contains(card)) return;
   if (e.target.closest('button, a, input, textarea, select')) return;
+
+  /* Shift (or ctrl/cmd) turns a click into a selection toggle rather than a
+     drag or an open. Handled on the way down so the card responds instantly. */
+  if (e.shiftKey || e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    toggleSelect(card.dataset.id);
+    drag = null;
+    return;
+  }
 
   drag = {
     card: card, id: card.dataset.id, active: false,
@@ -1208,6 +1342,119 @@ function onPointerCancel() {
   if (!drag) return;
   clearTimeout(drag.timer);
   if (drag.active) endDrag(false); else drag = null;
+}
+
+/* ── Dropping things in from outside ──────────────────────────────────────
+   Text, links, images and files dragged from another window, the desktop or
+   another app land on a lane and become tasks there.
+
+   This is the HTML5 drag-and-drop API, unlike the card dragging above, which
+   is pointer-based. The two never collide: cards never fire `dragstart`, so
+   anything arriving here came from outside the board.
+
+   Everything a drop carries is untrusted text. It is stored as text and
+   escaped at render like any other note; nothing here fetches a dropped URL
+   or renders dropped markup. */
+
+var MAX_DROP = 20;
+
+/* A link drag carries markup as well as the URL, and that markup usually holds
+   the one thing the URL does not: what the link was called. Parsed, never
+   rendered - DOMParser does not run scripts, and only text and the src come
+   back out. */
+function dropMetaFromHTML(html) {
+  var meta = { title: '', src: '' };
+  if (!html || !window.DOMParser) return meta;
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var a = doc.querySelector('a[href]');
+    var img = doc.querySelector('img[src]');
+    if (img) {
+      meta.src = img.getAttribute('src') || '';
+      meta.title = (img.getAttribute('alt') || '').trim();
+    }
+    if (a && !meta.title) meta.title = (a.textContent || '').trim().replace(/\s+/g, ' ');
+    if (!meta.src && a) meta.src = a.getAttribute('href') || '';
+    meta.title = meta.title.slice(0, 140);
+  } catch (e) { /* malformed markup is just a drop with no title */ }
+  return meta;
+}
+
+function htmlToText(html) {
+  if (!html || !window.DOMParser) return '';
+  try {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    return (doc.body.textContent || '').trim().replace(/\n{3,}/g, '\n\n');
+  } catch (e) { return ''; }
+}
+
+function isURL(s) { return /^(https?|file|ftp):\/\/\S+$/i.test(s); }
+
+/* Works out what a drop is worth as tasks. Returns [{title, note, tags}]. */
+function tasksFromDrop(dt) {
+  if (!dt) return [];
+  var html = '';
+  try { html = dt.getData('text/html') || ''; } catch (e) {}
+  var plain = '';
+  try { plain = (dt.getData('text/plain') || '').trim(); } catch (e) {}
+  var uriRaw = '';
+  try { uriRaw = dt.getData('text/uri-list') || dt.getData('URL') || ''; } catch (e) {}
+
+  /* text/uri-list is newline separated and allows # comment lines */
+  var uris = uriRaw.split(/\r?\n/).map(function (s) { return s.trim(); })
+    .filter(function (s) { return s && s.charAt(0) !== '#'; });
+  var meta = dropMetaFromHTML(html);
+
+  if (uris.length) {
+    return uris.slice(0, MAX_DROP).map(function (u, i) {
+      /* The link text titles the first one only: with several URLs the markup
+         describes the set, not each member. */
+      return { title: (i === 0 && meta.title && meta.title !== u) ? meta.title : '', note: u };
+    });
+  }
+
+  /* A file from the desktop. The browser only ever exposes the name, never
+     the path, and the file itself is far too big for localStorage, so the
+     name is genuinely all there is to keep. */
+  var files = dt.files ? Array.prototype.slice.call(dt.files) : [];
+  if (files.length) {
+    return files.slice(0, MAX_DROP).map(function (f) { return { title: '', note: f.name }; });
+  }
+
+  if (plain) {
+    /* A bare URL dropped as text is still a URL, and must not have its
+       fragment mistaken for a tag. */
+    if (isURL(plain)) return [{ title: meta.title && meta.title !== plain ? meta.title : '', note: plain }];
+    var parsed = extractTags(plain);
+    return [{ title: '', note: parsed.note, tags: parsed.tags }];
+  }
+
+  var text = htmlToText(html);
+  if (text) {
+    var p = extractTags(text);
+    return [{ title: '', note: p.note, tags: p.tags }];
+  }
+  return [];
+}
+
+function handleDrop(dt, status) {
+  var made = tasksFromDrop(dt);
+  if (!made.length) { toast('Nothing in that drop to make a task from'); return; }
+  var created = made.map(function (m) {
+    return addTask({
+      project: currentProject(),
+      title: m.title || '',
+      note: m.note,
+      tags: m.tags || [],
+      status: status
+    });
+  });
+  renderAll();
+  if (created.length === 1) {
+    toast('Added to ' + statusLabel(status), 'Open', function () { openTask(created[0].id); });
+  } else {
+    toast(plural(created.length, 'task') + ' added to ' + statusLabel(status));
+  }
 }
 
 /* ── Projects and tags: actions ───────────────────────────────────────── */
@@ -1404,6 +1651,7 @@ function init() {
     }
     saveUI();
     boardFilter.tag = '';
+    selection = [];
     renderAll();
   });
   $('#btnNewTask').addEventListener('click', function () { $('#quickNote').focus(); });
@@ -1423,7 +1671,31 @@ function init() {
     renderBoard();
   });
   $('#board').addEventListener('click', function (e) {
-    if (e.target.closest('[data-showall]')) { ui.showAllDone = true; saveUI(); renderBoard(); }
+    if (e.target.closest('[data-showall]')) { ui.showAllDone = true; saveUI(); renderBoard(); return; }
+    if (e.target.closest('[data-archiveall]')) {
+      /* Exactly what the lane is showing, so a filtered board cannot archive
+         something off screen. */
+      var closed = laneOf(currentProject(), 'done').filter(matchesBoard);
+      if (!closed.length) { toast('Nothing closed to archive'); return; }
+      archiveMany(closed, 'closed task');
+    }
+  });
+
+  /* Selection bar */
+  $('#selBar').addEventListener('click', function (e) {
+    var mv = e.target.closest('[data-selmove]');
+    if (mv) {
+      var picked = selectedTasks();
+      var to = mv.dataset.selmove;
+      var n = picked.filter(function (t) { return t.status !== to; }).length;
+      moveMany(picked.map(function (t) { return t.id; }), to, null);
+      clearSelection(true);
+      renderAll();
+      toast(plural(n, 'task') + ' → ' + statusLabel(to));
+      return;
+    }
+    if (e.target.closest('[data-selarchive]')) { archiveMany(selectedTasks()); return; }
+    if (e.target.closest('#selClear')) clearSelection(true);
   });
 
   /* Cards: pointer drag, with a plain tap falling through to opening one */
@@ -1436,6 +1708,58 @@ function init() {
     /* A long press on a phone would otherwise raise the text menu mid-drag */
     if (drag && drag.active) e.preventDefault();
   });
+
+  /* Dropping text, links, images and files in from outside.
+
+     The document-level handlers are the safety net: without them a URL
+     dropped anywhere else on the page makes the browser navigate away from
+     the app, which is a horrible surprise even though nothing is lost. */
+  function dropCarriesSomething(e) {
+    var types = e.dataTransfer && e.dataTransfer.types;
+    if (!types) return false;
+    return Array.prototype.indexOf.call(types, 'text/plain') >= 0 ||
+      Array.prototype.indexOf.call(types, 'text/uri-list') >= 0 ||
+      Array.prototype.indexOf.call(types, 'text/html') >= 0 ||
+      Array.prototype.indexOf.call(types, 'Files') >= 0;
+  }
+
+  document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.addEventListener('drop', function (e) { e.preventDefault(); });
+
+  var dropDepth = 0;
+  board.addEventListener('dragenter', function (e) {
+    if (!dropCarriesSomething(e)) return;
+    e.preventDefault();
+    dropDepth++;
+    board.classList.add('drop-armed');
+  });
+  board.addEventListener('dragover', function (e) {
+    if (!dropCarriesSomething(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    var col = e.target.closest ? e.target.closest('.col') : null;
+    $$('.col').forEach(function (c) { c.classList.toggle('drop-create', c === col); });
+  });
+  board.addEventListener('dragleave', function () {
+    /* dragleave fires for every child crossed, so count entries and exits
+       rather than clearing on the first one. */
+    dropDepth = Math.max(0, dropDepth - 1);
+    if (!dropDepth) clearDropState();
+  });
+  board.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var col = e.target.closest ? e.target.closest('.col') : null;
+    clearDropState();
+    /* Dropped on the board but between the lanes: New is where new things go. */
+    handleDrop(e.dataTransfer, col ? col.dataset.status : 'new');
+  });
+
+  function clearDropState() {
+    dropDepth = 0;
+    board.classList.remove('drop-armed');
+    $$('.col').forEach(function (c) { c.classList.remove('drop-create'); });
+  }
 
   /* List */
   $('#listSearch').addEventListener('input', function () {
@@ -1518,20 +1842,11 @@ function init() {
     this.value = '';
   });
   $('#btnArchiveClosed').addEventListener('click', function () {
+    /* Every project, unlike the board's own Archive all, which is scoped to
+       the lane in front of you. */
     var closed = liveTasks().filter(function (t) { return t.status === 'done'; });
     if (!closed.length) { toast('Nothing closed to archive'); return; }
-    closed.forEach(function (t) {
-      t.archived = true;
-      logActivity(t, 'Archived from ' + statusLabel(t.status));
-      touch(t);
-    });
-    save(); renderAll();
-    /* Reversible in bulk too: undo puts every one of them back. */
-    toast(plural(closed.length, 'task') + ' archived', 'Undo', function () {
-      closed.forEach(function (t) { t.archived = false; logActivity(t, 'Reopened into ' + statusLabel(t.status)); });
-      save(); renderAll();
-      toast('Put back');
-    });
+    archiveMany(closed, 'closed task');
   });
   $('#btnViewArchive').addEventListener('click', function () {
     listFilter = { q: '', project: '', status: 'archived', tag: '' };
@@ -1565,6 +1880,7 @@ function init() {
     if (e.key === 'Escape') {
       if (openId) { closeDrawer(); return; }
       if ($('#moreSheet').classList.contains('open')) { closeMore(); return; }
+      if (selection.length) { clearSelection(true); return; }
       if (typing) document.activeElement.blur();
       return;
     }

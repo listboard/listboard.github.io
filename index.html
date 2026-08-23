@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css?v=4">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -104,7 +104,7 @@
   <section class="panel quickadd">
     <textarea id="quickNote" rows="1" placeholder="Jot a task and press Enter. Shift+Enter for a new line, #tag to tag it."></textarea>
     <div class="quickadd-foot">
-      <span class="hint">A note is all a task needs. Title, tags and comments can come later.</span>
+      <span class="hint">A note is all a task needs, or drop text, a link or a file onto a lane below.</span>
       <button class="mini primary" id="btnQuickAdd">Add</button>
     </div>
   </section>
@@ -116,6 +116,14 @@
       <div class="chips" id="boardTagChips"></div>
     </div>
   </section>
+
+  <!-- Appears once anything is shift-selected. Sticky rather than fixed so it
+       never fights the toast or the phone's bottom bar. -->
+  <div class="selbar" id="selBar" hidden>
+    <span class="selbar-n" id="selCount"></span>
+    <span class="selbar-acts" id="selActs"></span>
+    <button class="mini" id="selClear" title="Clear the selection (Esc)">Clear</button>
+  </div>
 
   <div class="board" id="board"></div>
 </div>
@@ -262,7 +270,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=1"></script>
+<script src="js/app.js?v=4"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->

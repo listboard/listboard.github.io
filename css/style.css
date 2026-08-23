@@ -252,10 +252,37 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
   margin-left: auto; font-size: .75rem; font-weight: 600; color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+/* Lane-level action, currently just Archive all on Closed. Quiet until the
+   lane is hovered, so it never competes with the count for attention. */
+.col-act {
+  padding: .1rem .45rem; font-size: .72rem; font-weight: 600;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted); opacity: .8;
+}
+.col:hover .col-act, .col-act:focus-visible { opacity: 1; }
+.col-act:hover { border-color: var(--accent); color: var(--accent); }
+
 .col-body {
   padding: .6rem; display: flex; flex-direction: column; gap: .5rem;
   min-height: 90px;
 }
+/* Something from outside is being dragged over the board. Every lane lifts a
+   little so it reads as "any of these will take it", and the one under the
+   pointer is called out below. */
+.board.drop-armed .col { border-style: dashed; border-color: var(--muted); }
+.col.drop-create {
+  border-style: solid !important; border-color: var(--accent) !important;
+  background: var(--accent-wash);
+}
+.col.drop-create .col-body::before {
+  content: "Drop to add a task here";
+  display: block; text-align: center; padding: .8rem .5rem;
+  border: 1px dashed var(--accent); border-radius: 8px;
+  color: var(--accent); font-size: .82rem; font-weight: 600;
+}
+/* Nothing inside a lane may swallow the drag events the lane needs to see */
+.board.drop-armed .col * { pointer-events: none; }
+
 /* The live drop target while a card is being dragged over it */
 .col.drop-into { border-color: var(--accent); }
 .col.drop-into .col-body { background: var(--accent-wash); border-radius: 0 0 9px 9px; }
@@ -310,7 +337,38 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
   box-shadow: 0 12px 28px var(--shadow); border-color: var(--accent);
   transform: rotate(1.5deg); cursor: grabbing; opacity: 1;
 }
+/* The ghost of a multi-card drag says how much is coming with it. */
+.card.flying[data-count]::after {
+  content: attr(data-count);
+  position: absolute; top: -8px; right: -8px;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px; background: var(--accent); color: var(--accent-ink);
+  font-size: .72rem; font-weight: 700; line-height: 20px; text-align: center;
+}
+
+/* Shift-selected cards. The ring is on top of the lane's left edge rather than
+   replacing it, so a selected card still says which lane it belongs to. */
+.card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--accent-wash);
+}
+
 .drop-line { height: 2px; background: var(--accent); border-radius: 2px; margin: -.15rem 0; }
+
+/* The selection bar. Sticky at the top of the board rather than fixed at the
+   bottom, where it would fight the toast and the phone's nav. */
+.selbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  margin-bottom: .7rem; padding: .5rem .7rem;
+  background: var(--accent-wash); border: 1px solid var(--accent);
+  border-radius: 9px; box-shadow: 0 2px 8px var(--shadow);
+}
+.selbar-n { font-size: .85rem; font-weight: 600; color: var(--accent); }
+.selbar-acts { display: flex; gap: .3rem; flex-wrap: wrap; flex: 1; }
+.selbar button[disabled] { opacity: .45; cursor: default; }
+.selbar button[disabled]:hover { border-color: var(--line); color: var(--ink); }
 body.dragging-card { cursor: grabbing; }
 body.dragging-card * { cursor: grabbing !important; }
 

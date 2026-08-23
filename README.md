@@ -18,6 +18,14 @@ to sign up for.
 - **Three lanes.** New → In progress → Closed, with drag-and-drop between them
   and reordering inside them. Dragging works with a mouse and with a finger
   (long press to pick a card up).
+- **Drop things in.** Drag text, a link, an image or a file from anywhere
+  onto a lane and it becomes a task there. Text becomes the note (with any
+  `#tags` picked out), a link or image becomes its URL, and the link text or
+  image alt text becomes the title. Several links at once become several
+  tasks.
+- **Bulk moves.** Shift-click (or ctrl/cmd-click) cards to select several,
+  then send the whole group to a lane, archive it, or drag any one card and
+  the rest come with it. The Closed lane also has an **Archive all** button.
 - **Comments.** Every task keeps a running thread of comments, plus a history
   of when it was created, moved, archived and commented on.
 - **An archive, not a bin.** Archiving is how a task leaves a board. It keeps
@@ -79,7 +87,8 @@ is actually doing.
 | --- | --- |
 | <kbd>n</kbd> | New task on the current board |
 | <kbd>/</kbd> | Jump to the search box |
-| <kbd>Esc</kbd> | Close the task panel or the More sheet |
+| <kbd>Esc</kbd> | Close the task panel or the More sheet, or clear the selection |
+| <kbd>Shift</kbd>/<kbd>Ctrl</kbd>+click | Add a card to the selection on the board |
 | <kbd>Enter</kbd> | In quick add, files the task. <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line |
 | <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> | In the comment box, posts the comment |
 
