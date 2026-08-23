@@ -38,8 +38,10 @@ to sign up for.
   Listboard wherever you are. Case, spaces and punctuation are ignored when
   matching, an unknown name creates the project (with an undo), and naming an
   archived one brings it back. Works in dropped text too.
-- **Search and filter.** Filter one board by text or tag; search every task
-  everywhere from the List page, filtered by project, status and tag.
+- **Search and filter.** The board filters by project pills, tag pills and
+  free text, and the filter box takes the same sigils as quick add, so
+  `@alpha #ui` narrows to one project and one tag without touching the pills.
+  The List page searches every task everywhere, by project, status and tag.
 - **Backups.** Export the whole board as one JSON file, named
   `listboard-YYYY-MM-DD-HHMMSS.json`. Import merges a file back in and never
   deletes; drop the file onto Settings, or use the picker. On iPad and iPhone
@@ -85,6 +87,21 @@ That means:
   counts. It measures page views, not content: it has no access to your tasks,
   which never leave localStorage. It is the one third-party request on the
   page, and it does not load at all with JavaScript disabled.
+
+Three things push back on that, none of which replaces a real backup:
+
+- **Persistent storage.** Settings can ask the browser to exempt Listboard
+  from evicting data to reclaim space. Chrome usually grants it outright,
+  Firefox asks, Safari does not implement it.
+- **Install it.** Add to Home Screen on iPhone or iPad, or install it from
+  the browser on desktop. In mobile Safari an installed web app is exempt
+  from the roughly seven-day purge of script-written storage, which is the
+  single biggest risk to a board you do not open every week.
+- **A backup that says its age.** Settings shows how long it has been since
+  the last export, and says so loudly once it is over a fortnight.
+
+Clearing site data by hand still wipes everything, and no web API can prevent
+that. The exported file is the only copy that survives it.
 
 The app tries hard not to lose anything: every write is read back and verified,
 data that cannot be parsed is copied to `lb-data-rescued` instead of being

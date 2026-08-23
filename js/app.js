@@ -27,6 +27,10 @@ var KEY_DATA = 'lb-data';
 var KEY_THEME = 'lb-theme';
 var KEY_UI = 'lb-ui';
 var KEY_RESCUED = 'lb-data-rescued';
+var KEY_LAST_EXPORT = 'lb-last-export';
+/* How long a board can go unbacked-up before the Settings page starts
+   saying so, and a session gets one quiet reminder. */
+var BACKUP_NAG_DAYS = 14;
 var SCHEMA = 1;
 
 /* The three lanes. The ids are written into storage, so they are permanent:
@@ -514,17 +518,60 @@ function extractTags(text) {
 }
 
 /* ── Filters ──────────────────────────────────────────────────────────── */
-var boardFilter = { q: '', tag: '' };
+var boardFilter = { q: '', tag: '', project: null };
 var listFilter = { q: '', project: '', status: '', tag: '' };
 
 function textOf(t) {
   return [t.title, t.note, t.tags.join(' '), projectName(t.project),
     t.comments.map(function (c) { return c.body; }).join(' ')].join(' ').toLowerCase();
 }
+function boardFiltered() {
+  return !!(boardFilter.q || boardFilter.tag || boardFilter.project !== null);
+}
+
 function matchesBoard(t) {
+  /* null is "every project"; '' is the real filter for tasks with no project
+     at all, which is why this tests against null rather than falsiness. */
+  if (boardFilter.project !== null && t.project !== boardFilter.project) return false;
   if (boardFilter.tag && t.tags.indexOf(boardFilter.tag) < 0) return false;
   if (boardFilter.q && textOf(t).indexOf(boardFilter.q) < 0) return false;
   return true;
+}
+
+/* No project can ever have this id, so filtering to it shows an empty board.
+   That is the honest answer to @nonsense: quietly ignoring an unmatched name
+   would show a board that looks unfiltered. */
+var NO_SUCH_PROJECT = '__no-such-project__';
+
+/* The board's filter box understands the same sigils as quick add: #tag and
+   @project drive the chips, and whatever is left is the free text search.
+
+   parseEntry is deliberately not reused here. It keeps the original text when
+   stripping would leave the note empty, which is right for a task and wrong
+   for a filter: "@listboard" on its own would come back as a literal text
+   search for "@listboard" and match nothing. */
+function applyBoardSearch(raw) {
+  var tag = '', proj = '';
+  var rest = String(raw)
+    .replace(/(^|\s)@([A-Za-z0-9][\w-]*)/g, function (m, pre, name) {
+      if (!proj) proj = name;
+      return pre;
+    })
+    .replace(/(^|\s)#([A-Za-z0-9][\w-]*)/g, function (m, pre, t) {
+      if (!tag) tag = cleanTag(t);
+      return pre;
+    })
+    .replace(/\s{2,}/g, ' ').trim();
+
+  boardFilter.q = rest.toLowerCase();
+  boardFilter.tag = tag;
+  if (proj) {
+    var hit = matchProject(proj);
+    boardFilter.project = hit ? hit.id : NO_SUCH_PROJECT;
+  } else {
+    boardFilter.project = null;
+  }
+  renderBoard();
 }
 function matchesList(t) {
   /* The archive is reachable one way only: Status → Archived. Every other
@@ -681,6 +728,7 @@ function renderBoard() {
     ? plural(open, 'open task') + ' of ' + all.length + (overdue ? ', ' + overdue + ' overdue' : '')
     : (p ? 'Nothing here yet. Jot the first task below.' : 'No tasks yet. Jot the first one below.');
 
+  renderBoardProjChips();
   renderBoardTagChips();
 
   renderSelBar();
@@ -707,8 +755,10 @@ function renderBoard() {
       '</div>' +
       '<div class="col-body">';
     if (!shown.length) {
+      /* An empty lane and a lane filtered down to nothing look identical, so
+         they have to be told apart by whether a filter is on at all. */
       html += '<div class="col-empty">' +
-        (lane.length ? 'Nothing matches the filter' :
+        (boardFiltered() ? 'Nothing matches the filter' :
           s.id === 'new' ? 'Drop a task here' : 'Nothing ' + s.label.toLowerCase()) +
         '</div>';
     }
@@ -739,6 +789,44 @@ function renderSelBar() {
     return '<button class="mini"' + (all ? ' disabled' : '') +
       ' data-selmove="' + s.id + '">' + esc(s.label) + '</button>';
   }).join('') + '<button class="mini" data-selarchive="1">Archive</button>';
+}
+
+/* Only worth showing on the all-projects board: anywhere else every card is
+   already in the same project. */
+function renderBoardProjChips() {
+  var row = $('#boardProjRow');
+  var host = $('#boardProjChips');
+  if (!row || !host) return;
+
+  var pool = tasksOf(currentProject());
+  var counts = {};
+  pool.forEach(function (t) { counts[t.project] = (counts[t.project] || 0) + 1; });
+
+  var ids = activeProjects().filter(function (p) { return counts[p.id]; })
+    .map(function (p) { return p.id; });
+  var unfiled = counts[''] || 0;
+
+  /* Nothing to choose between: one project, or a board already scoped to one. */
+  if (currentProject() !== '' || ids.length + (unfiled ? 1 : 0) < 2) {
+    row.hidden = true;
+    if (boardFilter.project !== null) { boardFilter.project = null; }
+    return;
+  }
+  row.hidden = false;
+
+  var html = '<button class="chip' + (boardFilter.project === null ? ' on' : '') +
+    '" data-bproj="" data-all="1" title="Every project on this board">All</button>';
+  ids.forEach(function (id) {
+    html += '<button class="chip' + (boardFilter.project === id ? ' on' : '') +
+      '" data-bproj="' + esc(id) + '">' + esc(projectName(id)) +
+      '<span class="n">' + counts[id] + '</span></button>';
+  });
+  if (unfiled) {
+    html += '<button class="chip' + (boardFilter.project === '' ? ' on' : '') +
+      '" data-bproj="" title="Tasks with no project">No project' +
+      '<span class="n">' + unfiled + '</span></button>';
+  }
+  host.innerHTML = html;
 }
 
 function renderBoardTagChips() {
@@ -909,6 +997,7 @@ function renderArchiveCount() {
 
 function renderAll() {
   renderCounts();
+  renderBackupAge();
   renderArchiveCount();
   renderPicker();
   renderBoard();
@@ -1631,6 +1720,110 @@ function removeTagEverywhere(tag) {
 /* ── Backup ───────────────────────────────────────────────────────────── */
 /* listboard-YYYY-MM-DD-HHMMSS. Seconds are in there so two exports in the
    same minute cannot collide and get silently renamed to "(1)". */
+/* ── Keeping the data alive ───────────────────────────────────────────────
+   localStorage is not a promise. Browsers evict it under pressure, and Safari
+   throws away script-written storage for a site you have not visited in about
+   a week. Three things push back, none of which replaces a real backup:
+
+   - persistent storage, which exempts the origin from that eviction
+   - installing to the home screen, which exempts it in mobile Safari
+   - saying out loud how long it has been since the last export
+
+   Clearing site data by hand still wipes everything, and no web API can stop
+   that. The exported file is the only copy that survives it. */
+
+function persistSupported() {
+  return !!(navigator.storage && navigator.storage.persist && navigator.storage.persisted);
+}
+
+function isInstalled() {
+  return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone);
+}
+
+/* Chrome decides on the spot and usually says yes for a site with real
+   engagement; Firefox prompts; Safari does not implement it at all. */
+function askPersist() {
+  if (!persistSupported()) { renderPersistStatus(); return; }
+  navigator.storage.persist().then(function (granted) {
+    renderPersistStatus();
+    toast(granted
+      ? 'This browser will keep your tasks unless you clear them yourself'
+      : 'The browser declined for now. Try again after using the board a while.');
+  }, function () { renderPersistStatus(); });
+}
+
+function renderPersistStatus() {
+  var el = $('#persistStatus');
+  if (!el) return;
+  var btn = $('#btnPersist');
+  if (!persistSupported()) {
+    el.textContent = 'This browser does not offer persistent storage. ' +
+      (isInstalled() ? 'It is installed to your home screen, which is the protection that matters here.'
+        : 'Adding it to your home screen is the next best thing, and on iPhone and iPad it is the one that counts.');
+    if (btn) btn.disabled = true;
+    return;
+  }
+  navigator.storage.persisted().then(function (yes) {
+    el.textContent = yes
+      ? 'Storage is persistent: this browser will not evict your tasks to reclaim space.'
+      : 'Storage is not persistent yet, so the browser may evict it to reclaim space.';
+    if (btn) btn.disabled = yes;
+  }, function () {});
+}
+
+function lastExportAt() {
+  var raw = storageGet(KEY_LAST_EXPORT);
+  if (!raw) return null;
+  var d = new Date(raw);
+  return isNaN(d) ? null : d;
+}
+
+function daysSinceExport() {
+  var d = lastExportAt();
+  if (!d) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function renderBackupAge() {
+  var el = $('#backupAge');
+  if (!el) return;
+  var n = data.tasks.length;
+  var days = daysSinceExport();
+  if (!n) { el.textContent = 'Nothing to back up yet.'; el.classList.remove('warn-line'); return; }
+  if (days === null) {
+    el.innerHTML = '<b class="warn">No backup yet.</b> ' + plural(n, 'task') +
+      ' live only in this browser.';
+    el.classList.add('warn-line');
+    return;
+  }
+  var when = fmtWhen(lastExportAt().toISOString());
+  if (days >= BACKUP_NAG_DAYS) {
+    el.innerHTML = '<b class="warn">Last backup was ' + plural(days, 'day') + ' ago</b>, on ' +
+      esc(when) + '.';
+    el.classList.add('warn-line');
+  } else {
+    el.textContent = 'Last backup ' +
+      (days === 0 ? 'today' : days === 1 ? 'yesterday' : plural(days, 'day') + ' ago') +
+      ', on ' + when + '.';
+    el.classList.remove('warn-line');
+  }
+}
+
+/* One reminder per session, and only when there is something to lose. */
+var naggedBackup = false;
+function maybeNagBackup() {
+  if (naggedBackup) return;
+  naggedBackup = true;
+  if (data.tasks.length < 3) return;
+  var days = daysSinceExport();
+  if (days !== null && days < BACKUP_NAG_DAYS) return;
+  toast(days === null
+    ? 'These tasks have never been backed up'
+    : 'Last backup was ' + plural(days, 'day') + ' ago',
+    'Back up', function () { location.hash = 'settings'; route(); exportData(); });
+}
+
 function stamp(d) {
   function p(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
@@ -1676,6 +1869,8 @@ function exportData() {
   var name = 'listboard-' + stamp(now) + '.json';
   var text = JSON.stringify(payload, null, 2);
   var done = 'Exported ' + plural(data.tasks.length, 'task') + ' to ' + name;
+  storageSet(KEY_LAST_EXPORT, now.toISOString());
+  renderBackupAge();
 
   /* On iPad and iPhone a plain download link is a dead end: Safari opens the
      JSON in a tab, or saves it under a name of its own choosing, and the
@@ -1879,7 +2074,15 @@ function init() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); quickAdd(); }
   });
   $('#boardSearch').addEventListener('input', function () {
-    boardFilter.q = this.value.trim().toLowerCase();
+    applyBoardSearch(this.value);
+  });
+  $('#boardProjChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-bproj]');
+    if (!b) return;
+    /* The All chip and the No project chip both carry an empty value, so they
+       are told apart by the marker rather than by the value. */
+    var want = b.dataset.all ? null : b.dataset.bproj;
+    boardFilter.project = (boardFilter.project === want && want !== null) ? null : want;
     renderBoard();
   });
   $('#boardTagChips').addEventListener('click', function (e) {
@@ -2146,6 +2349,11 @@ function init() {
       goTabThenFocus('board', '#boardSearch');
     }
   });
+
+  $('#btnPersist').addEventListener('click', askPersist);
+  renderPersistStatus();
+  /* After first paint, so the reminder never lands on a blank screen. */
+  setTimeout(maybeNagBackup, 1200);
 
   window.addEventListener('hashchange', route);
   renderAll();
