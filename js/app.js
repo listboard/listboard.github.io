@@ -564,6 +564,37 @@ function showTab(name) {
   window.scrollTo(0, 0);
 }
 
+function onTab(name) {
+  return $('#tab-' + name).classList.contains('active');
+}
+
+/* A field on a hidden tab cannot take focus: the browser refuses silently and
+   the keystroke appears to do nothing. So the tab is switched first, and
+   switched *synchronously* - assigning location.hash updates the property
+   straight away but does not fire hashchange until the current task ends, so
+   route() has to be called by hand rather than waited for. */
+function goTabThenFocus(name, sel) {
+  if (!onTab(name)) {
+    location.hash = name;
+    route();
+  }
+  focusField(sel);
+}
+
+function focusField(sel) {
+  var el = $(sel);
+  if (!el) return;
+  el.focus();
+  /* Caret at the end rather than selecting what is there, so typing extends an
+     existing filter instead of replacing it. */
+  if (el.setSelectionRange && typeof el.value === 'string') {
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
+  }
+  /* showTab has just scrolled to the top; make sure the field is actually in
+     view on a small screen, where it may sit below the fold. */
+  if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+}
+
 function closeMore() {
   $('#moreSheet').classList.remove('open');
   $('.tabs [data-tab="settings"]').classList.remove('sheet-open');
@@ -2082,16 +2113,14 @@ function init() {
     if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'n') {
       e.preventDefault();
-      if (!$('#tab-board').classList.contains('active')) location.hash = 'board';
-      $('#quickNote').focus();
+      goTabThenFocus('board', '#quickNote');
     }
     if (e.key === '/') {
       e.preventDefault();
-      var box = $('#tab-list').classList.contains('active') ? $('#listSearch') : $('#boardSearch');
-      if (!$('#tab-board').classList.contains('active') && !$('#tab-list').classList.contains('active')) {
-        location.hash = 'board'; box = $('#boardSearch');
-      }
-      box.focus();
+      /* Search where you already are, if that page has a search. Anywhere
+         else, the board's filter is the one people mean. */
+      if (onTab('list')) { focusField('#listSearch'); return; }
+      goTabThenFocus('board', '#boardSearch');
     }
   });
 
