@@ -255,18 +255,29 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
 
 /* ── Filters ───────────────────────────────────────────────────────── */
 .filters .filter-row {
-  display: flex; align-items: baseline; gap: .6rem;
+  display: flex; align-items: flex-start; gap: .6rem;
   margin-top: .7rem; flex-wrap: wrap;
 }
 .filter-label {
-  font-size: .68rem; text-transform: uppercase; letter-spacing: .09em;
+  font-size: .68rem; line-height: 1.9; text-transform: uppercase; letter-spacing: .09em;
   color: var(--muted); width: 66px; flex-shrink: 0;
 }
-.chips { display: flex; flex-wrap: wrap; gap: .3rem; flex: 1; min-width: 0; }
+/* align-items and align-content are pinned to the start on purpose. A wrapping
+   flex container defaults to stretching its lines, and a chip has no height of
+   its own, so anything that makes a line taller than its text turns every chip
+   in that row into a balloon. Leaving it to the default is what let the list
+   filters blow up into ovals while the board's stayed the right size. */
+.chips {
+  display: flex; flex-wrap: wrap; gap: .3rem; flex: 1; min-width: 0;
+  align-items: flex-start; align-content: flex-start;
+}
 .chip {
-  padding: .25rem .6rem; font-size: .8rem; border-radius: 999px;
+  padding: .25rem .6rem; font-size: .8rem; line-height: 1.35;
+  border-radius: 999px;
   border: 1px solid var(--line); background: var(--card); color: var(--muted);
   cursor: pointer; font-family: inherit; white-space: nowrap;
+  /* Never grow to fill the line, whatever the row around it is doing. */
+  align-self: flex-start; flex: 0 0 auto; height: auto; min-height: 0;
 }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
