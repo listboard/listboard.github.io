@@ -333,6 +333,11 @@ body.dragging-card * { cursor: grabbing !important; }
   font-size: .7rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px;
   border: 1px solid var(--st); color: var(--st); white-space: nowrap;
 }
+/* An archived task keeps its lane colour, so the archived marker has to read
+   as a separate thing rather than a fourth status. */
+.archived-badge { border-color: var(--muted); color: var(--muted); }
+.trow.is-archived { background: var(--panel); }
+.trow.is-archived .trow-title { color: var(--muted); }
 .proj-badge { font-size: .72rem; color: var(--muted); }
 .empty {
   color: var(--muted); font-size: .9rem; text-align: center;
