@@ -83,3 +83,9 @@ sheet that stops above the bottom bar.
 - `#board`, `#list`, `#projects`, `#tags`, `#settings` open a tab
 - `#task/<id>` opens a task directly (the Link button in the task panel copies one)
 - `#project/<id>` switches the board to a project
+
+## Test it locally
+
+Double-click `serve.cmd` on Windows, or run the http-server command above,
+then open <http://localhost:8124>. Tasks you add while testing are stored
+against `localhost:8124`, so they stay separate from the live site.
