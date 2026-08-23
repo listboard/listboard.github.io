@@ -823,19 +823,47 @@ function applyBoardSearch(raw) {
   }
   renderBoard();
 }
-function matchesList(t) {
+/* Explicit "has none of these" filters. Empty string still means Any, so
+   these need values of their own rather than reusing it. */
+var NO_PROJECT = '∅project';
+var NO_TAGS = '∅tags';
+
+/* Every list filter in one place, taking the filter set as an argument so the
+   facet counts can ask "what if this one chip were different". */
+function matchesListWith(t, f) {
   /* The archive is reachable one way only: Status → Archived. Every other
      filter combination, including "Any", is about live work. */
-  if (listFilter.status === 'archived') {
+  if (f.status === 'archived') {
     if (!t.archived) return false;
   } else {
     if (t.archived) return false;
-    if (listFilter.status && t.status !== listFilter.status) return false;
+    /* A status that no longer exists still passes Any, so a task whose lane
+       was removed outside the app can always be found and refiled. */
+    if (f.status && t.status !== f.status) return false;
   }
-  if (listFilter.project && t.project !== listFilter.project) return false;
-  if (listFilter.tag && t.tags.indexOf(listFilter.tag) < 0) return false;
-  if (listFilter.q && textOf(t).indexOf(listFilter.q) < 0) return false;
+  if (f.project === NO_PROJECT) {
+    if (t.project) return false;
+  } else if (f.project && t.project !== f.project) return false;
+
+  if (f.tag === NO_TAGS) {
+    if (t.tags.length) return false;
+  } else if (f.tag && t.tags.indexOf(f.tag) < 0) return false;
+
+  if (f.q && textOf(t).indexOf(f.q) < 0) return false;
   return true;
+}
+
+function matchesList(t) { return matchesListWith(t, listFilter); }
+
+/* How many tasks would match if one chip were set to `value`, with every other
+   filter left as it is. That is what makes a count trustworthy: a chip reading
+   3 means clicking it shows 3, not 3 before the search box has its say. */
+function facetCount(key, value) {
+  var f = { q: listFilter.q, project: listFilter.project, status: listFilter.status, tag: listFilter.tag };
+  f[key] = value;
+  var n = 0;
+  data.tasks.forEach(function (t) { if (matchesListWith(t, f)) n++; });
+  return n;
 }
 
 /* ── Theme ────────────────────────────────────────────────────────────── */
@@ -1108,41 +1136,71 @@ function renderBoardTagChips() {
 }
 
 /* ── Rendering: the flat list ─────────────────────────────────────────── */
+/* Every chip carries the count it would actually produce if clicked, with the
+   other filters left as they are. Counting each facet on its own was the bug
+   behind "Closed 1" sitting above "0 of 20 tasks": the search box had already
+   ruled that task out, but the chip had not been told.
+
+   A chip that would yield nothing is dimmed rather than hidden, so the shape
+   of the data stays visible instead of the row twitching as you type. */
+function chipHTML(attr, value, label, on, title, n) {
+  return '<button class="chip' + (on ? ' on' : '') + (!n && !on ? ' empty' : '') +
+    '" ' + attr + '="' + esc(value) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' +
+    esc(label) + '<span class="n">' + n + '</span></button>';
+}
+
 function renderListChips() {
-  /* Project counts follow whichever side of the archive you are looking at,
-     so the numbers always add up to the rows underneath. */
+  var out = [];
+
+  /* Projects. Any counts everything that passes the other filters, including
+     tasks with no project at all; No project is the way to ask for only those. */
+  out.push(chipHTML('data-lproj', '', 'Any', listFilter.project === '',
+    'Every project, and tasks with none', facetCount('project', '')));
+  activeProjects().forEach(function (p) {
+    out.push(chipHTML('data-lproj', p.id, p.name, listFilter.project === p.id, '',
+      facetCount('project', p.id)));
+  });
+  var noProj = facetCount('project', NO_PROJECT);
+  if (noProj || listFilter.project === NO_PROJECT) {
+    out.push(chipHTML('data-lproj', NO_PROJECT, 'No project',
+      listFilter.project === NO_PROJECT, 'Tasks filed under no project', noProj));
+  }
+  $('#listProjChips').innerHTML = out.join('');
+
+  /* Statuses. Any covers every lane, and also any task whose lane has since
+     been removed, so nothing can become unreachable. */
+  out = [chipHTML('data-lstatus', '', 'Any', listFilter.status === '',
+    'Every lane', facetCount('status', ''))];
+  statuses().forEach(function (st) {
+    out.push(chipHTML('data-lstatus', st.id, st.label, listFilter.status === st.id, '',
+      facetCount('status', st.id)));
+  });
+  /* The only door into the archive. It stays visible at zero so it is findable
+     before there is anything behind it. */
+  out.push(chipHTML('data-lstatus', 'archived', 'Archived', listFilter.status === 'archived',
+    'Archived tasks, hidden from every board', facetCount('status', 'archived')));
+  $('#listStatusChips').innerHTML = out.join('');
+
+  /* Tags. Any includes untagged tasks; Untagged is the way to ask for only
+     those. */
   var pool = listFilter.status === 'archived' ? archivedTasks() : liveTasks();
-  $('#listProjChips').innerHTML = ['<button class="chip' + (listFilter.project === '' ? ' on' : '') +
-    '" data-lproj="">Any</button>'].concat(activeProjects().map(function (p) {
-      var n = pool.filter(function (t) { return t.project === p.id; }).length;
-      return '<button class="chip' + (listFilter.project === p.id ? ' on' : '') +
-        '" data-lproj="' + esc(p.id) + '">' + esc(p.name) + '<span class="n">' + n + '</span></button>';
-    })).join('');
-
-  var nArchived = archivedTasks().length;
-  $('#listStatusChips').innerHTML = ['<button class="chip' + (listFilter.status === '' ? ' on' : '') +
-    '" data-lstatus="">Any</button>'].concat(statuses().map(function (s) {
-      var n = liveTasks().filter(function (t) { return t.status === s.id; }).length;
-      return '<button class="chip' + (listFilter.status === s.id ? ' on' : '') +
-        '" data-lstatus="' + s.id + '">' + esc(s.label) + '<span class="n">' + n + '</span></button>';
-    })).concat([
-      /* The only door into the archive. It stays visible at zero so it is
-         findable before there is anything behind it. */
-      '<button class="chip' + (listFilter.status === 'archived' ? ' on' : '') +
-      '" data-lstatus="archived" title="Archived tasks, hidden from every board">Archived' +
-      '<span class="n">' + nArchived + '</span></button>'
-    ]).join('');
-
-  var tcounts = {};
-  pool.forEach(function (t) { t.tags.forEach(function (g) { tcounts[g] = (tcounts[g] || 0) + 1; }); });
-  var tags = Object.keys(tcounts).sort();
+  var tags = {};
+  pool.forEach(function (t) { t.tags.forEach(function (g) { tags[g] = true; }); });
+  var names = Object.keys(tags).sort();
   var row = $('#listTagChips').closest('.filter-row');
-  if (row) row.style.display = tags.length ? '' : 'none';
-  $('#listTagChips').innerHTML = ['<button class="chip' + (listFilter.tag === '' ? ' on' : '') +
-    '" data-ltag="">Any</button>'].concat(tags.map(function (g) {
-      return '<button class="chip' + (listFilter.tag === g ? ' on' : '') +
-        '" data-ltag="' + esc(g) + '">' + esc(g) + '<span class="n">' + tcounts[g] + '</span></button>';
-    })).join('');
+  if (row) row.style.display = names.length ? '' : 'none';
+
+  out = [chipHTML('data-ltag', '', 'Any', listFilter.tag === '',
+    'Every tag, and tasks with none', facetCount('tag', ''))];
+  names.forEach(function (g) {
+    out.push(chipHTML('data-ltag', g, g, listFilter.tag === g, '', facetCount('tag', g)));
+  });
+  var untagged = facetCount('tag', NO_TAGS);
+  if (untagged || listFilter.tag === NO_TAGS) {
+    out.push(chipHTML('data-ltag', NO_TAGS, 'Untagged', listFilter.tag === NO_TAGS,
+      'Tasks with no tags at all', untagged));
+  }
+  $('#listTagChips').innerHTML = out.join('');
 }
 
 function renderList() {

@@ -53,6 +53,9 @@ to sign up for.
   free text, and the filter box takes the same sigils as quick add, so
   `@alpha #ui` narrows to one project and one tag without touching the pills.
   The List page searches every task everywhere, by project, status and tag.
+  Every chip counts what it would actually show if clicked, with the other
+  filters left as they are, and **No project** and **Untagged** pick out the
+  tasks that have neither.
 - **Backups.** Export the whole board as one JSON file, named
   `listboard-YYYY-MM-DD-HHMMSS.json`. Import merges a file back in and never
   deletes; drop the file onto Settings, or use the picker. On iPad and iPhone
