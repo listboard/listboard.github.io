@@ -1654,7 +1654,6 @@ function init() {
     selection = [];
     renderAll();
   });
-  $('#btnNewTask').addEventListener('click', function () { $('#quickNote').focus(); });
   $('#btnQuickAdd').addEventListener('click', quickAdd);
   $('#quickNote').addEventListener('input', function () { autoGrow(this); });
   $('#quickNote').addEventListener('keydown', function (e) {
