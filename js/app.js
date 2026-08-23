@@ -26,10 +26,10 @@
 var KEY_DATA = 'lb-data';
 var KEY_THEME = 'lb-theme';
 var KEY_UI = 'lb-ui';
-var KEY_RESCUED = 'lb-data-rescued';
-var KEY_LAST_EXPORT = 'lb-last-export';
-/* How long a board can go unbacked-up before the Settings page starts
-   saying so, and a session gets one quiet reminder. */
+var KEY_RESCUED = 'lb-data-rescued';
+var KEY_LAST_EXPORT = 'lb-last-export';
+/* How long a board can go unbacked-up before the Settings page starts
+   saying so, and a session gets one quiet reminder. */
 var BACKUP_NAG_DAYS = 14;
 var SCHEMA = 1;
 
