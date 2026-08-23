@@ -518,17 +518,60 @@ function extractTags(text) {
 }
 
 /* ── Filters ──────────────────────────────────────────────────────────── */
-var boardFilter = { q: '', tag: '' };
+var boardFilter = { q: '', tag: '', project: null };
 var listFilter = { q: '', project: '', status: '', tag: '' };
 
 function textOf(t) {
   return [t.title, t.note, t.tags.join(' '), projectName(t.project),
     t.comments.map(function (c) { return c.body; }).join(' ')].join(' ').toLowerCase();
 }
+function boardFiltered() {
+  return !!(boardFilter.q || boardFilter.tag || boardFilter.project !== null);
+}
+
 function matchesBoard(t) {
+  /* null is "every project"; '' is the real filter for tasks with no project
+     at all, which is why this tests against null rather than falsiness. */
+  if (boardFilter.project !== null && t.project !== boardFilter.project) return false;
   if (boardFilter.tag && t.tags.indexOf(boardFilter.tag) < 0) return false;
   if (boardFilter.q && textOf(t).indexOf(boardFilter.q) < 0) return false;
   return true;
+}
+
+/* No project can ever have this id, so filtering to it shows an empty board.
+   That is the honest answer to @nonsense: quietly ignoring an unmatched name
+   would show a board that looks unfiltered. */
+var NO_SUCH_PROJECT = '__no-such-project__';
+
+/* The board's filter box understands the same sigils as quick add: #tag and
+   @project drive the chips, and whatever is left is the free text search.
+
+   parseEntry is deliberately not reused here. It keeps the original text when
+   stripping would leave the note empty, which is right for a task and wrong
+   for a filter: "@listboard" on its own would come back as a literal text
+   search for "@listboard" and match nothing. */
+function applyBoardSearch(raw) {
+  var tag = '', proj = '';
+  var rest = String(raw)
+    .replace(/(^|\s)@([A-Za-z0-9][\w-]*)/g, function (m, pre, name) {
+      if (!proj) proj = name;
+      return pre;
+    })
+    .replace(/(^|\s)#([A-Za-z0-9][\w-]*)/g, function (m, pre, t) {
+      if (!tag) tag = cleanTag(t);
+      return pre;
+    })
+    .replace(/\s{2,}/g, ' ').trim();
+
+  boardFilter.q = rest.toLowerCase();
+  boardFilter.tag = tag;
+  if (proj) {
+    var hit = matchProject(proj);
+    boardFilter.project = hit ? hit.id : NO_SUCH_PROJECT;
+  } else {
+    boardFilter.project = null;
+  }
+  renderBoard();
 }
 function matchesList(t) {
   /* The archive is reachable one way only: Status → Archived. Every other
@@ -685,6 +728,7 @@ function renderBoard() {
     ? plural(open, 'open task') + ' of ' + all.length + (overdue ? ', ' + overdue + ' overdue' : '')
     : (p ? 'Nothing here yet. Jot the first task below.' : 'No tasks yet. Jot the first one below.');
 
+  renderBoardProjChips();
   renderBoardTagChips();
 
   renderSelBar();
@@ -711,8 +755,10 @@ function renderBoard() {
       '</div>' +
       '<div class="col-body">';
     if (!shown.length) {
+      /* An empty lane and a lane filtered down to nothing look identical, so
+         they have to be told apart by whether a filter is on at all. */
       html += '<div class="col-empty">' +
-        (lane.length ? 'Nothing matches the filter' :
+        (boardFiltered() ? 'Nothing matches the filter' :
           s.id === 'new' ? 'Drop a task here' : 'Nothing ' + s.label.toLowerCase()) +
         '</div>';
     }
@@ -743,6 +789,44 @@ function renderSelBar() {
     return '<button class="mini"' + (all ? ' disabled' : '') +
       ' data-selmove="' + s.id + '">' + esc(s.label) + '</button>';
   }).join('') + '<button class="mini" data-selarchive="1">Archive</button>';
+}
+
+/* Only worth showing on the all-projects board: anywhere else every card is
+   already in the same project. */
+function renderBoardProjChips() {
+  var row = $('#boardProjRow');
+  var host = $('#boardProjChips');
+  if (!row || !host) return;
+
+  var pool = tasksOf(currentProject());
+  var counts = {};
+  pool.forEach(function (t) { counts[t.project] = (counts[t.project] || 0) + 1; });
+
+  var ids = activeProjects().filter(function (p) { return counts[p.id]; })
+    .map(function (p) { return p.id; });
+  var unfiled = counts[''] || 0;
+
+  /* Nothing to choose between: one project, or a board already scoped to one. */
+  if (currentProject() !== '' || ids.length + (unfiled ? 1 : 0) < 2) {
+    row.hidden = true;
+    if (boardFilter.project !== null) { boardFilter.project = null; }
+    return;
+  }
+  row.hidden = false;
+
+  var html = '<button class="chip' + (boardFilter.project === null ? ' on' : '') +
+    '" data-bproj="" data-all="1" title="Every project on this board">All</button>';
+  ids.forEach(function (id) {
+    html += '<button class="chip' + (boardFilter.project === id ? ' on' : '') +
+      '" data-bproj="' + esc(id) + '">' + esc(projectName(id)) +
+      '<span class="n">' + counts[id] + '</span></button>';
+  });
+  if (unfiled) {
+    html += '<button class="chip' + (boardFilter.project === '' ? ' on' : '') +
+      '" data-bproj="" title="Tasks with no project">No project' +
+      '<span class="n">' + unfiled + '</span></button>';
+  }
+  host.innerHTML = html;
 }
 
 function renderBoardTagChips() {
@@ -1990,7 +2074,15 @@ function init() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); quickAdd(); }
   });
   $('#boardSearch').addEventListener('input', function () {
-    boardFilter.q = this.value.trim().toLowerCase();
+    applyBoardSearch(this.value);
+  });
+  $('#boardProjChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-bproj]');
+    if (!b) return;
+    /* The All chip and the No project chip both carry an empty value, so they
+       are told apart by the marker rather than by the value. */
+    var want = b.dataset.all ? null : b.dataset.bproj;
+    boardFilter.project = (boardFilter.project === want && want !== null) ? null : want;
     renderBoard();
   });
   $('#boardTagChips').addEventListener('click', function (e) {
