@@ -53,9 +53,27 @@ good intentions.
 - **Import merges, it never replaces.** An incoming task only overwrites a
   local one when its `updated` stamp is newer, so restoring an old backup can
   never undo today's work. Unknown projects are added, nothing is removed.
-- **Destructive actions need a way back.** Deleting a task offers Undo;
-  deleting a project keeps its tasks under *No project*; the two Danger zone
+- **Archive, do not delete.** A task leaves a board by being archived, which
+  changes nothing about it but one flag. Permanent deletion is a second step,
+  offered only for a task that is already archived, and it confirms first.
+  Do not add a one-click delete back to the board or the task panel.
+- **Destructive actions need a way back.** Archiving offers Undo, in bulk too;
+  deleting a project keeps its tasks under *No project*; the Danger zone
   buttons confirm (twice, for Delete everything) and say what cannot be undone.
+
+## The archive
+`archived` is a boolean on the task, deliberately **not** a fourth status: a
+task keeps the lane it was in, so reopening puts it back where it was instead
+of dumping it in New.
+
+- The archive has exactly one door: **List → Status → Archived**. Boards, the
+  default List view, tag counts and nav badges all read from `liveTasks()`.
+  If you add a view, start it from `liveTasks()` or it will leak the archive.
+- The List page's project and tag chips count whichever side of the archive is
+  being shown, so the chip numbers always add up to the rows underneath.
+- Reopening is one click from the archived row, and the task panel's status
+  picker reopens too - picking a lane for an archived task means you want it
+  back.
 
 ## Data model
 One blob under `lb-data`: `{ schema, projects: [Project], tasks: [Task] }`.

@@ -16,7 +16,11 @@ Live at **https://listboard.github.io**
   and reordering inside them. Dragging works with a mouse and with a finger
   (long press to pick a card up).
 - **Comments.** Every task keeps a running thread of comments, plus a history
-  of when it was created, moved and commented on.
+  of when it was created, moved, archived and commented on.
+- **An archive, not a bin.** Archiving is how a task leaves a board. It keeps
+  its lane, comments and history, and lives at **List → Status → Archived**,
+  where one click reopens it back into the lane it left. Permanent deletion
+  exists, but only for something already archived.
 - **Tags.** Type `#tag` straight into the quick-add box, or manage tags in the
   task panel. The Tags page renames a tag across every task at once.
 - **Search and filter.** Filter one board by text or tag; search every task
@@ -57,8 +61,9 @@ That means:
 
 The app tries hard not to lose anything: every write is read back and verified,
 data that cannot be parsed is copied to `lb-data-rescued` instead of being
-overwritten, deleting a task offers an undo, and deleting a project keeps its
-tasks and files them under *No project*. The Settings page reports what storage
+overwritten, tasks are archived rather than deleted, archiving offers an undo
+(in bulk too), and deleting a project keeps its tasks and files them under
+*No project*. The Settings page reports what storage
 is actually doing.
 
 ## Keyboard
