@@ -870,16 +870,28 @@ function onTab(name) {
   return $('#tab-' + name).classList.contains('active');
 }
 
+/* Whichever tab page is on screen right now, regardless of what the URL says.
+   They can disagree: the task drawer rewrites the hash without routing. */
+function currentTabName() {
+  for (var i = 0; i < TABS.length; i++) if (onTab(TABS[i])) return TABS[i];
+  return 'board';
+}
+
+/* Sets the hash and makes sure the router runs, even when the hash is already
+   what we are setting it to. Assigning an unchanged hash fires no hashchange,
+   which is exactly how a tab button ends up doing nothing. */
+function goTab(name) {
+  if (location.hash === '#' + name) { route(); return; }
+  location.hash = name;
+}
+
 /* A field on a hidden tab cannot take focus: the browser refuses silently and
    the keystroke appears to do nothing. So the tab is switched first, and
    switched *synchronously* - assigning location.hash updates the property
    straight away but does not fire hashchange until the current task ends, so
    route() has to be called by hand rather than waited for. */
 function goTabThenFocus(name, sel) {
-  if (!onTab(name)) {
-    location.hash = name;
-    route();
-  }
+  if (!onTab(name)) goTab(name);
   focusField(sel);
 }
 
@@ -1294,11 +1306,14 @@ function renderAll() {
 
 /* ── The task drawer ──────────────────────────────────────────────────── */
 var openId = null;
+/* The tab a task was opened from, so closing it goes back there. */
+var drawerReturn = '';
 
 function openTask(id) {
   var t = taskById(id);
   if (!t) return;
   openId = id;
+  if (!drawerReturn) drawerReturn = currentTabName();
   $('#drawerScrim').hidden = false;
   var d = $('#drawer');
   d.hidden = false;
@@ -1314,7 +1329,14 @@ function closeDrawer() {
   $('#drawer').hidden = true;
   $('#drawer').innerHTML = '';
   $('#drawerScrim').hidden = true;
-  if ((location.hash || '').indexOf('#task/') === 0) history.replaceState(null, '', '#board');
+  /* Back to the tab the task was opened from, not always the board. Sending
+     the URL to #board while the List tab is still on screen leaves the two
+     disagreeing, and the Board button then looks broken: the hash is already
+     what it wants to set, so nothing happens at all. */
+  if ((location.hash || '').indexOf('#task/') === 0) {
+    history.replaceState(null, '', '#' + (drawerReturn || currentTabName()));
+  }
+  drawerReturn = '';
 }
 
 function drawTaskDrawer(t) {
@@ -2081,7 +2103,7 @@ function addExamples() {
   saveUI();
   save();
   renderAll();
-  location.hash = 'board';
+  goTab('board');
   toast('Example project added', 'Remove', removeExamples);
 }
 
@@ -2254,7 +2276,7 @@ function maybeNagBackup() {
   toast(days === null
     ? 'These tasks have never been backed up'
     : 'Last backup was ' + plural(days, 'day') + ' ago',
-    'Back up', function () { location.hash = 'settings'; route(); exportData(); });
+    'Back up', function () { goTab('settings'); exportData(); });
 }
 
 function stamp(d) {
@@ -2495,12 +2517,11 @@ function init() {
         b.classList.toggle('sheet-open', openNow);
         return;
       }
-      location.hash = name;
-      if ((location.hash || '').replace(/^#/, '') !== name) route();
+      goTab(name);
     });
   });
   $$('.more-tile').forEach(function (b) {
-    b.addEventListener('click', function () { location.hash = b.dataset.more; });
+    b.addEventListener('click', function () { goTab(b.dataset.more); });
   });
 
   /* Board */
@@ -2677,7 +2698,7 @@ function init() {
     if (!b) return;
     var p = projectById(b.closest('[data-pid]').dataset.pid);
     if (!p) return;
-    if (b.dataset.pact === 'open') { ui.project = p.id; saveUI(); location.hash = 'board'; renderAll(); route(); }
+    if (b.dataset.pact === 'open') { ui.project = p.id; saveUI(); renderAll(); goTab('board'); }
     if (b.dataset.pact === 'rename') {
       var name = window.prompt('Rename project', p.name);
       if (name && name.trim()) { p.name = name.trim(); save(); renderAll(); }
@@ -2700,7 +2721,7 @@ function init() {
       listFilter = { q: '', project: '', status: '', tag: tag };
       $('#listSearch').value = '';
       renderList();
-      location.hash = 'list';
+      goTab('list');
     }
     if (b.dataset.tact === 'rename') {
       var to = window.prompt('Rename #' + tag + ' to', tag);
@@ -2793,7 +2814,7 @@ function init() {
     listFilter = { q: '', project: '', status: 'archived', tag: '' };
     $('#listSearch').value = '';
     renderList();
-    location.hash = 'list';
+    goTab('list');
   });
   $('#btnPurgeArchived').addEventListener('click', function () {
     var n = archivedTasks().length;
