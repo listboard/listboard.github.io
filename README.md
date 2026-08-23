@@ -56,7 +56,12 @@ Then open http://localhost:8124. The files are:
 | `index.html` | The whole shell: nav, five tab pages, the task drawer |
 | `css/style.css` | Palette, the rail/bottom-bar layout, board and card styling |
 | `js/app.js` | Data model, storage, rendering, drag-and-drop, backup |
-| `favicon.svg` | Three lanes, in the accent yellow |
+| `favicon.svg` | The small mark: three solid lanes, in the accent yellow |
+| `favicon.ico` | 16/32/48 fallback, because Safari ignores SVG favicons |
+| `assets/icon-512.png` | 512px square for manifests, previews, anywhere else |
+| `assets/icon-192.png` | 192px square |
+| `assets/apple-touch-icon.png` | 180px, for iOS home screens |
+| `tools/make-icons.py` | Redraws every raster icon from one geometry, by hand |
 
 ## Where your tasks live
 
