@@ -1,0 +1,8 @@
+# Normalise every text file to LF in the repository. Without this, a file
+# written on Windows can land with CRLF while the same file on another branch
+# has LF, and git then reports every single line as conflicting.
+* text=auto eol=lf
+
+# Binary, never touched
+*.png binary
+*.ico binary
