@@ -34,6 +34,10 @@ to sign up for.
   exists, but only for something already archived.
 - **Tags.** Type `#tag` straight into the quick-add box, or manage tags in the
   task panel. The Tags page renames a tag across every task at once.
+- **`@project` to file it.** `fix the nav @listboard #ui` files the task under
+  Listboard wherever you are. Case, spaces and punctuation are ignored when
+  matching, an unknown name creates the project (with an undo), and naming an
+  archived one brings it back. Works in dropped text too.
 - **Search and filter.** Filter one board by text or tag; search every task
   everywhere from the List page, filtered by project, status and tag.
 - **Backups.** Export the whole board as JSON, import it back on another
