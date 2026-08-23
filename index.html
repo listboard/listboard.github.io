@@ -225,6 +225,21 @@
   </div>
 
   <section class="panel">
+    <div class="mod-h">Lanes <small>the columns on every board</small></div>
+    <p class="lede">
+      New, In progress and Closed ship with every board and cannot be removed,
+      though you can rename and recolour them. Add your own for anything else:
+      a Backlog in front, a Blocked in the middle, a Cancelled at the end.
+      Lanes travel with an export, so a backup restores the board you had.
+    </p>
+    <div id="statusRows"></div>
+    <div class="row wrap" style="margin-top:.7rem">
+      <input type="text" id="newStatusName" placeholder="New lane name, e.g. Backlog" maxlength="40">
+      <button class="mini primary" id="btnAddStatus">Add lane</button>
+    </div>
+  </section>
+
+  <section class="panel">
     <div class="mod-h">Backup <small>everything, as one JSON file</small></div>
     <p class="lede">
       Tasks live only in this browser, so they do not follow you to another
@@ -271,6 +286,16 @@
     <div class="row wrap">
       <button class="danger" id="btnPurgeArchived">Delete archived tasks</button>
       <button class="danger" id="btnResetAll">Delete everything</button>
+    </div>
+    <p class="lede" style="margin:.9rem 0 .5rem">
+      Or go the other way: fill a sample project with tasks spread across the
+      lanes, with tags, comments, due dates and an archived one, to see how the
+      board behaves. It is added alongside your own work and never replaces it,
+      and it can be removed again in one click.
+    </p>
+    <div class="row wrap">
+      <button id="btnExamples">Add example tasks</button>
+      <button id="btnRemoveExamples">Remove example tasks</button>
     </div>
   </section>
 

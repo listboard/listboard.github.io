@@ -35,19 +35,67 @@ var SCHEMA = 1;
 
 /* The three lanes. The ids are written into storage, so they are permanent:
    renaming a label is free, renaming an id is a data migration. */
-var STATUSES = [
-  { id: 'new', label: 'New', hue: 'var(--st-new)' },
-  { id: 'doing', label: 'In progress', hue: 'var(--st-doing)' },
-  { id: 'done', label: 'Closed', hue: 'var(--st-done)' }
+/* The lanes. The three built-ins ship with every board and their ids are
+   written into stored data, so those ids are permanent: renaming a label is
+   free, renaming an id is a data migration. Extra lanes can be added, renamed,
+   recoloured, reordered and removed from Settings, and they travel with an
+   export so a backup restores the board you actually had.
+
+   `terminal` marks a lane as "finished work": it is left out of the open
+   counts, it gets the Archive all button, and it is the one that only shows
+   its most recent cards until asked for the rest. */
+var STATUS_COLORS = ['slate', 'amber', 'green', 'blue', 'purple', 'red', 'teal', 'pink'];
+
+var BUILTIN_STATUSES = [
+  { id: 'new', label: 'New', color: 'slate', terminal: false },
+  { id: 'doing', label: 'In progress', color: 'amber', terminal: false },
+  { id: 'done', label: 'Closed', color: 'green', terminal: true }
 ];
-var STATUS_IDS = STATUSES.map(function (s) { return s.id; });
+var BUILTIN_IDS = BUILTIN_STATUSES.map(function (s) { return s.id; });
+
+function defaultStatuses() {
+  return BUILTIN_STATUSES.map(function (s) {
+    return { id: s.id, label: s.label, color: s.color, terminal: s.terminal };
+  });
+}
+
+function statuses() { return data.statuses; }
+function statusIds() { return data.statuses.map(function (s) { return s.id; }); }
+
+function statusById(id) {
+  for (var i = 0; i < data.statuses.length; i++) {
+    if (data.statuses[i].id === id) return data.statuses[i];
+  }
+  return null;
+}
 function statusLabel(id) {
-  for (var i = 0; i < STATUSES.length; i++) if (STATUSES[i].id === id) return STATUSES[i].label;
-  return id;
+  var s = statusById(id);
+  return s ? s.label : id;
 }
 function statusHue(id) {
-  for (var i = 0; i < STATUSES.length; i++) if (STATUSES[i].id === id) return STATUSES[i].hue;
-  return 'var(--line)';
+  var s = statusById(id);
+  return s ? 'var(--st-' + s.color + ')' : 'var(--line)';
+}
+function isTerminal(id) {
+  var s = statusById(id);
+  return !!(s && s.terminal);
+}
+function isBuiltin(id) { return BUILTIN_IDS.indexOf(id) >= 0; }
+
+/* Where a task goes when its lane is removed, or when stored data names a lane
+   that no longer exists: the first one, which is never removable. */
+function firstStatusId() {
+  return data.statuses.length ? data.statuses[0].id : 'new';
+}
+
+/* Ids for lanes someone adds by hand. Derived from the label so an export is
+   readable, and suffixed rather than replaced if it collides. */
+function statusIdFor(label) {
+  var base = String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '').slice(0, 24) || 'status';
+  var id = base, n = 2;
+  while (statusById(id)) { id = base + '-' + n; n++; }
+  return id;
 }
 
 /* How many closed cards a column shows before it offers to show the rest.
@@ -84,7 +132,7 @@ function loadJSON(key, fallback) {
   try { return JSON.parse(raw); } catch (e) { return fallback; }
 }
 
-function emptyData() { return { schema: SCHEMA, projects: [], tasks: [] }; }
+function emptyData() { return { schema: SCHEMA, statuses: defaultStatuses(), projects: [], tasks: [] }; }
 
 /* Reads the board without ever destroying what is there. */
 function loadData() {
@@ -100,6 +148,11 @@ function loadData() {
     return emptyData();
   }
   var d = emptyData();
+  /* Lanes first: normalizeTask checks a task's status against them. A file
+     with no statuses is one written before they were configurable, and gets
+     the three built-ins. */
+  d.statuses = normalizeStatuses(parsed.statuses);
+  data = d;
   d.projects = (Array.isArray(parsed.projects) ? parsed.projects : [])
     .filter(function (p) { return p && p.id; })
     .map(function (p) {
@@ -114,6 +167,33 @@ function loadData() {
   return d;
 }
 
+/* Keeps the three built-ins present and in the stored order, drops anything
+   malformed, and refuses to end up with an empty list. */
+function normalizeStatuses(raw) {
+  var out = [];
+  var seen = {};
+  (Array.isArray(raw) ? raw : []).forEach(function (s) {
+    if (!s || !s.id) return;
+    var id = String(s.id);
+    if (seen[id]) return;
+    seen[id] = true;
+    out.push({
+      id: id,
+      label: String(s.label || id).slice(0, 40),
+      color: STATUS_COLORS.indexOf(s.color) >= 0 ? s.color : 'slate',
+      terminal: !!s.terminal
+    });
+  });
+  /* A built-in that is missing from the file is put back rather than lost:
+     tasks elsewhere in the same file may still be filed under it. */
+  BUILTIN_STATUSES.forEach(function (b, i) {
+    if (seen[b.id]) return;
+    out.splice(Math.min(i, out.length), 0,
+      { id: b.id, label: b.label, color: b.color, terminal: b.terminal });
+  });
+  return out.length ? out : defaultStatuses();
+}
+
 function normalizeTask(t) {
   return {
     id: String(t.id),
@@ -121,7 +201,7 @@ function normalizeTask(t) {
     title: typeof t.title === 'string' ? t.title : '',
     note: typeof t.note === 'string' ? t.note : '',
     tags: Array.isArray(t.tags) ? t.tags.map(cleanTag).filter(Boolean) : [],
-    status: STATUS_IDS.indexOf(t.status) >= 0 ? t.status : 'new',
+    status: statusById(t.status) ? t.status : firstStatusId(),
     /* Archived is deliberately separate from status: a task keeps the lane it
        was in, so reopening puts it back where it was rather than at New. */
     archived: !!t.archived,
@@ -367,9 +447,9 @@ function selectedTasks() {
    one lands immediately above the anchor, so the group arrives in sequence. */
 function moveMany(ids, status, beforeId) {
   var order = {};
-  STATUSES.forEach(function (s) {
+  statuses().forEach(function (s) {
     laneOf(currentProject(), s.id).forEach(function (t, i) {
-      order[t.id] = STATUS_IDS.indexOf(s.id) * 10000 + i;
+      order[t.id] = statusIds().indexOf(s.id) * 10000 + i;
     });
   });
   ids.slice().sort(function (a, b) { return (order[a] || 0) - (order[b] || 0); })
@@ -666,8 +746,8 @@ function route() {
 /* ── Rendering: nav counts ────────────────────────────────────────────── */
 function renderCounts() {
   var live = liveTasks();
-  var open = live.filter(function (t) { return t.status !== 'done'; }).length;
-  var boardOpen = tasksOf(currentProject()).filter(function (t) { return t.status !== 'done'; }).length;
+  var open = live.filter(function (t) { return !isTerminal(t.status); }).length;
+  var boardOpen = tasksOf(currentProject()).filter(function (t) { return !isTerminal(t.status); }).length;
   $('#boardCount').textContent = boardOpen ? String(boardOpen) : '';
   $('#listCount').textContent = live.length ? String(live.length) : '';
   $('#projCount').textContent = activeProjects().length ? String(activeProjects().length) : '';
@@ -722,8 +802,8 @@ function renderBoard() {
   $('#boardTitle').textContent = p ? p.name : 'All projects';
 
   var all = tasksOf(proj);
-  var open = all.filter(function (t) { return t.status !== 'done'; }).length;
-  var overdue = all.filter(function (t) { return t.status !== 'done' && t.due && t.due < todayStr(); }).length;
+  var open = all.filter(function (t) { return !isTerminal(t.status); }).length;
+  var overdue = all.filter(function (t) { return !isTerminal(t.status) && t.due && t.due < todayStr(); }).length;
   $('#boardSub').textContent = all.length
     ? plural(open, 'open task') + ' of ' + all.length + (overdue ? ', ' + overdue + ' overdue' : '')
     : (p ? 'Nothing here yet. Jot the first task below.' : 'No tasks yet. Jot the first one below.');
@@ -735,11 +815,11 @@ function renderBoard() {
 
   var host = $('#board');
   var html = '';
-  STATUSES.forEach(function (s) {
+  statuses().forEach(function (s) {
     var lane = laneOf(proj, s.id).filter(matchesBoard);
     var shown = lane;
     var hidden = 0;
-    if (s.id === 'done' && !ui.showAllDone && lane.length > DONE_PREVIEW) {
+    if (s.terminal && !ui.showAllDone && lane.length > DONE_PREVIEW) {
       shown = lane.slice(0, DONE_PREVIEW);
       hidden = lane.length - DONE_PREVIEW;
     }
@@ -749,7 +829,7 @@ function renderBoard() {
       /* Closed is the lane that piles up, so it gets the one-click way to
          empty it. It acts on what the lane is actually showing, so a filtered
          board never archives something you cannot see. */
-      (s.id === 'done' && lane.length
+      (s.terminal && lane.length
         ? '<button class="col-act" data-archiveall="1" title="Archive every closed task on this board">Archive all</button>'
         : '') +
       '</div>' +
@@ -784,7 +864,7 @@ function renderSelBar() {
   bar.hidden = false;
   $('#selCount').textContent = plural(picked.length, 'task') + ' selected';
   /* Only lanes the selection is not already entirely in are worth offering. */
-  $('#selActs').innerHTML = STATUSES.map(function (s) {
+  $('#selActs').innerHTML = statuses().map(function (s) {
     var all = picked.every(function (t) { return t.status === s.id; });
     return '<button class="mini"' + (all ? ' disabled' : '') +
       ' data-selmove="' + s.id + '">' + esc(s.label) + '</button>';
@@ -864,7 +944,7 @@ function renderListChips() {
 
   var nArchived = archivedTasks().length;
   $('#listStatusChips').innerHTML = ['<button class="chip' + (listFilter.status === '' ? ' on' : '') +
-    '" data-lstatus="">Any</button>'].concat(STATUSES.map(function (s) {
+    '" data-lstatus="">Any</button>'].concat(statuses().map(function (s) {
       var n = liveTasks().filter(function (t) { return t.status === s.id; }).length;
       return '<button class="chip' + (listFilter.status === s.id ? ' on' : '') +
         '" data-lstatus="' + s.id + '">' + esc(s.label) + '<span class="n">' + n + '</span></button>';
@@ -937,7 +1017,7 @@ function renderProjects() {
   }
   $('#projectRows').innerHTML = data.projects.map(function (p) {
     var all = liveTasks().filter(function (t) { return t.project === p.id; });
-    var open = all.filter(function (t) { return t.status !== 'done'; }).length;
+    var open = all.filter(function (t) { return !isTerminal(t.status); }).length;
     var arch = archivedTasks().filter(function (t) { return t.project === p.id; }).length;
     return '<div class="arow' + (p.archived ? ' archived' : '') + '" data-pid="' + esc(p.id) + '">' +
       '<span class="arow-name">' + esc(p.name) + (p.archived ? ' <span class="arow-stats">(archived)</span>' : '') + '</span>' +
@@ -990,6 +1070,33 @@ function renderStorageStatus() {
   $('#storageStatus').innerHTML = lines.map(function (l) { return '<p style="margin:.35rem 0">' + l + '</p>'; }).join('');
 }
 
+function renderStatusRows() {
+  var host = $('#statusRows');
+  if (!host) return;
+  host.innerHTML = data.statuses.map(function (s, i) {
+    var n = liveTasks().filter(function (t) { return t.status === s.id; }).length;
+    var builtin = isBuiltin(s.id);
+    return '<div class="arow" data-sid="' + esc(s.id) + '">' +
+      '<span class="st-swatch" style="--st:var(--st-' + s.color + ')"></span>' +
+      '<span class="arow-name">' + esc(s.label) +
+      (builtin ? ' <span class="arow-stats">(built in)</span>' : '') + '</span>' +
+      '<span class="arow-stats">' + plural(n, 'task') + '</span>' +
+      '<span class="arow-acts">' +
+      '<select data-sact="color" title="Lane colour" class="st-color">' +
+      STATUS_COLORS.map(function (c) {
+        return '<option value="' + c + '"' + (c === s.color ? ' selected' : '') + '>' + c + '</option>';
+      }).join('') + '</select>' +
+      '<label class="st-term" title="Left out of the open counts, and gets the Archive all button">' +
+      '<input type="checkbox" data-sact="terminal"' + (s.terminal ? ' checked' : '') + '> closed' +
+      '</label>' +
+      '<button class="mini" data-sact="up"' + (i === 0 ? ' disabled' : '') + ' title="Move left">&uarr;</button>' +
+      '<button class="mini" data-sact="down"' + (i === data.statuses.length - 1 ? ' disabled' : '') + ' title="Move right">&darr;</button>' +
+      '<button class="mini" data-sact="rename">Rename</button>' +
+      (builtin ? '' : '<button class="mini danger" data-sact="delete">Delete</button>') +
+      '</span></div>';
+  }).join('');
+}
+
 function renderArchiveCount() {
   var n = archivedTasks().length;
   $('#archiveCount').textContent = n ? plural(n, 'task') + ' archived' : 'nothing archived yet';
@@ -998,6 +1105,7 @@ function renderArchiveCount() {
 function renderAll() {
   renderCounts();
   renderBackupAge();
+  renderStatusRows();
   renderArchiveCount();
   renderPicker();
   renderBoard();
@@ -1050,7 +1158,7 @@ function drawTaskDrawer(t) {
     '<textarea id="dNote" rows="6" placeholder="What is this task?">' + esc(t.note) + '</textarea></div>' +
 
     '<div class="dfield"><label>Status</label><div class="status-picker" id="dStatus">' +
-    STATUSES.map(function (s) {
+    statuses().map(function (s) {
       return '<button data-st="' + s.id + '"' + (t.status === s.id ? ' class="on"' : '') + '>' + esc(s.label) + '</button>';
     }).join('') + '</div></div>' +
 
@@ -1663,6 +1771,154 @@ function handleDrop(dt, status) {
   }
 }
 
+/* ── Lanes: actions ───────────────────────────────────────────────────── */
+function addStatus(label) {
+  label = String(label || '').trim();
+  if (!label) return null;
+  var dupe = data.statuses.filter(function (s) {
+    return s.label.toLowerCase() === label.toLowerCase();
+  })[0];
+  if (dupe) { toast('There is already a lane called ' + dupe.label); return null; }
+  if (data.statuses.length >= 8) { toast('Eight lanes is the limit'); return null; }
+  var st = {
+    id: statusIdFor(label),
+    label: label.slice(0, 40),
+    /* Next unused colour, so a new lane never arrives invisible against its
+       neighbour. */
+    color: STATUS_COLORS.filter(function (c) {
+      return !data.statuses.some(function (x) { return x.color === c; });
+    })[0] || 'slate',
+    terminal: false
+  };
+  data.statuses.push(st);
+  save();
+  return st;
+}
+
+/* Removing a lane must not remove its work: the tasks move to the first lane,
+   which is the one that can never be deleted. */
+function deleteStatus(st) {
+  if (isBuiltin(st.id)) { toast(st.label + ' ships with every board and cannot be removed'); return; }
+  var held = data.tasks.filter(function (t) { return t.status === st.id; });
+  var to = firstStatusId();
+  var msg = held.length
+    ? 'Remove the ' + st.label + ' lane? Its ' + plural(held.length, 'task') +
+      ' will move to ' + statusLabel(to) + '.'
+    : 'Remove the ' + st.label + ' lane?';
+  if (!window.confirm(msg)) return;
+  held.forEach(function (t) {
+    t.status = to;
+    logActivity(t, st.label + ' lane removed, moved to ' + statusLabel(to));
+    touch(t);
+  });
+  data.statuses = data.statuses.filter(function (x) { return x.id !== st.id; });
+  save();
+  renderAll();
+  toast(held.length ? 'Lane removed, ' + plural(held.length, 'task') + ' moved' : 'Lane removed');
+}
+
+function moveStatus(st, delta) {
+  var i = data.statuses.indexOf(st);
+  var j = i + delta;
+  if (i < 0 || j < 0 || j >= data.statuses.length) return;
+  data.statuses.splice(j, 0, data.statuses.splice(i, 1)[0]);
+  save();
+  renderAll();
+}
+
+/* ── Example tasks ────────────────────────────────────────────────────────
+   A sample project someone can poke at without touching their own work. It is
+   tagged with a fixed project id so Remove can find every piece of it again,
+   and it never touches anything else. */
+var EXAMPLE_PROJECT_ID = 'lb-example-project';
+
+function exampleTasks() {
+  var ids = statusIds();
+  var mid = ids[1] || ids[0];
+  var end = data.statuses.filter(function (s) { return s.terminal; })[0];
+  var endId = end ? end.id : ids[ids.length - 1];
+  var t = todayStr();
+  var d = new Date(); d.setDate(d.getDate() + 3);
+  function iso(x) { return x.toISOString(); }
+  var soon = iso(d).slice(0, 10);
+  var past = '2026-01-15';
+
+  return [
+    { note: 'Click any card to open it. Everything about a task lives in that panel: title, note, tags, project, due date, priority and comments.',
+      title: 'Start here', status: ids[0], tags: ['example'], priority: 'high' },
+    { note: 'Drag a card to another lane. On a phone or tablet, press and hold for a moment first, then drag.',
+      status: ids[0], tags: ['example', 'drag'] },
+    { note: 'Shift-click two or three cards, then use the bar that appears to move or archive them together.',
+      status: ids[0], tags: ['example', 'drag'] },
+    { note: 'This one is due today, so its date is highlighted.',
+      status: ids[0], tags: ['example'], due: t },
+    { note: 'This one is overdue, which is highlighted more loudly.',
+      status: mid, tags: ['example'], due: past, priority: 'high' },
+    { note: 'Type #tag in the quick-add box to tag a task, and @project to file it on another board, without leaving the keyboard.',
+      title: 'Sigils', status: mid, tags: ['example', 'tips'], due: soon },
+    { note: 'Comments keep a running thread on a task, and the panel logs every move it has made.',
+      status: mid, tags: ['example'],
+      comments: ['Left a note here so the card shows a comment count.',
+                 'A second one, to prove the thread keeps its order.'] },
+    { note: 'Finished work lands in the last lane. Archive all empties it in one go, and undo puts it back.',
+      title: 'Closed work', status: endId, tags: ['example'] },
+    { note: 'Drop text, a link or a file onto a lane and it becomes a task there.',
+      status: endId, tags: ['example', 'tips'] },
+    { note: 'An archived task. Find it under List, Status, Archived, and reopen it from there.',
+      title: 'Archived example', status: endId, tags: ['example'], archived: true }
+  ];
+}
+
+function addExamples() {
+  if (projectById(EXAMPLE_PROJECT_ID)) {
+    toast('The example project is already here');
+    ui.project = EXAMPLE_PROJECT_ID; saveUI(); renderAll();
+    return;
+  }
+  data.projects.push({
+    id: EXAMPLE_PROJECT_ID, name: 'Example project',
+    created: nowISO(), archived: false
+  });
+  exampleTasks().forEach(function (e, i) {
+    var t = normalizeTask({
+      id: 'lb-example-' + i,
+      project: EXAMPLE_PROJECT_ID,
+      title: e.title || '',
+      note: e.note,
+      tags: e.tags || [],
+      status: e.status,
+      due: e.due || '',
+      priority: e.priority || 'normal',
+      archived: !!e.archived,
+      created: nowISO(),
+      updated: nowISO()
+    });
+    t.order = i * 10;
+    (e.comments || []).forEach(function (c) {
+      t.comments.push({ id: uid(), body: c, created: nowISO() });
+    });
+    logActivity(t, 'Created');
+    data.tasks.push(t);
+  });
+  ui.project = EXAMPLE_PROJECT_ID;
+  saveUI();
+  save();
+  renderAll();
+  location.hash = 'board';
+  toast('Example project added', 'Remove', removeExamples);
+}
+
+function removeExamples() {
+  var n = data.tasks.filter(function (t) { return t.project === EXAMPLE_PROJECT_ID; }).length;
+  if (!n && !projectById(EXAMPLE_PROJECT_ID)) { toast('No example tasks to remove'); return; }
+  data.tasks = data.tasks.filter(function (t) { return t.project !== EXAMPLE_PROJECT_ID; });
+  data.projects = data.projects.filter(function (p) { return p.id !== EXAMPLE_PROJECT_ID; });
+  if (ui.project === EXAMPLE_PROJECT_ID) { ui.project = ''; saveUI(); }
+  save();
+  renderAll();
+  toast('Example project removed');
+}
+
 /* ── Projects and tags: actions ───────────────────────────────────────── */
 function addProject(name) {
   name = String(name || '').trim();
@@ -1861,6 +2117,7 @@ function exportData() {
     version: SCHEMA,
     exported: now.toISOString(),
     theme: document.documentElement.className,
+    statuses: data.statuses,
     projects: data.projects,
     tasks: data.tasks
   };
@@ -1907,7 +2164,21 @@ function importData(file) {
     /* Merge, never replace. A task already here is only overwritten by a copy
        that says it was updated later, so importing an old backup cannot undo
        today's work. */
-    var addedP = 0, addedT = 0, updatedT = 0;
+    var addedP = 0, addedT = 0, updatedT = 0, addedS = 0;
+    /* Lanes come across before tasks, or a task filed under an incoming lane
+       would be bounced to the first one on the way in. Existing lanes keep
+       their own label and colour: this machine's board wins on presentation,
+       the file only contributes lanes that are missing entirely. */
+    (Array.isArray(incoming.statuses) ? incoming.statuses : []).forEach(function (st) {
+      if (!st || !st.id || statusById(st.id)) return;
+      data.statuses.push({
+        id: String(st.id),
+        label: String(st.label || st.id).slice(0, 40),
+        color: STATUS_COLORS.indexOf(st.color) >= 0 ? st.color : 'slate',
+        terminal: !!st.terminal
+      });
+      addedS++;
+    });
     (Array.isArray(incoming.projects) ? incoming.projects : []).forEach(function (p) {
       if (!p || !p.id || projectById(p.id)) return;
       data.projects.push({
@@ -1930,8 +2201,9 @@ function importData(file) {
     save();
     if (incoming.theme === 'light' || incoming.theme === 'dark') setTheme(incoming.theme);
     renderAll();
-    $('#ioStatus').textContent = (addedT || updatedT || addedP)
-      ? 'Imported: ' + addedT + ' new, ' + updatedT + ' updated, ' + addedP + ' new projects.'
+    $('#ioStatus').textContent = (addedT || updatedT || addedP || addedS)
+      ? 'Imported: ' + addedT + ' new, ' + updatedT + ' updated, ' + addedP +
+        ' new projects' + (addedS ? ', ' + plural(addedS, 'new lane') : '') + '.'
       : 'Nothing to add; this file matched what is already here.';
     toast('Backup imported');
   };
@@ -2093,12 +2365,14 @@ function init() {
   });
   $('#board').addEventListener('click', function (e) {
     if (e.target.closest('[data-showall]')) { ui.showAllDone = true; saveUI(); renderBoard(); return; }
-    if (e.target.closest('[data-archiveall]')) {
-      /* Exactly what the lane is showing, so a filtered board cannot archive
-         something off screen. */
-      var closed = laneOf(currentProject(), 'done').filter(matchesBoard);
-      if (!closed.length) { toast('Nothing closed to archive'); return; }
-      archiveMany(closed, 'closed task');
+    var aa = e.target.closest('[data-archiveall]');
+    if (aa) {
+      /* The lane that was clicked, and exactly what it is showing, so a
+         filtered board cannot archive something off screen. */
+      var lid = aa.closest('.col').dataset.status;
+      var closed = laneOf(currentProject(), lid).filter(matchesBoard);
+      if (!closed.length) { toast('Nothing in ' + statusLabel(lid) + ' to archive'); return; }
+      archiveMany(closed, 'task');
     }
   });
 
@@ -2253,7 +2527,40 @@ function init() {
     if (b.dataset.tact === 'remove') removeTagEverywhere(tag);
   });
 
+  /* Lanes */
+  $('#btnAddStatus').addEventListener('click', function () {
+    var inp = $('#newStatusName');
+    var st = addStatus(inp.value);
+    if (st) { inp.value = ''; renderAll(); toast('Lane added: ' + st.label); }
+  });
+  $('#newStatusName').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); $('#btnAddStatus').click(); }
+  });
+  $('#statusRows').addEventListener('change', function (e) {
+    var el = e.target.closest('[data-sact]');
+    if (!el) return;
+    var st = statusById(el.closest('[data-sid]').dataset.sid);
+    if (!st) return;
+    if (el.dataset.sact === 'color') { st.color = el.value; save(); renderAll(); }
+    if (el.dataset.sact === 'terminal') { st.terminal = el.checked; save(); renderAll(); }
+  });
+  $('#statusRows').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-sact]');
+    if (!b) return;
+    var st = statusById(b.closest('[data-sid]').dataset.sid);
+    if (!st) return;
+    if (b.dataset.sact === 'up') moveStatus(st, -1);
+    if (b.dataset.sact === 'down') moveStatus(st, 1);
+    if (b.dataset.sact === 'delete') deleteStatus(st);
+    if (b.dataset.sact === 'rename') {
+      var name = window.prompt('Rename lane', st.label);
+      if (name && name.trim()) { st.label = name.trim().slice(0, 40); save(); renderAll(); }
+    }
+  });
+
   /* Settings */
+  $('#btnExamples').addEventListener('click', addExamples);
+  $('#btnRemoveExamples').addEventListener('click', removeExamples);
   $('#btnThemeDark').addEventListener('click', function () { setTheme('dark'); });
   $('#btnThemeLight').addEventListener('click', function () { setTheme('light'); });
   $('#btnExport').addEventListener('click', exportData);
@@ -2296,7 +2603,7 @@ function init() {
   $('#btnArchiveClosed').addEventListener('click', function () {
     /* Every project, unlike the board's own Archive all, which is scoped to
        the lane in front of you. */
-    var closed = liveTasks().filter(function (t) { return t.status === 'done'; });
+    var closed = liveTasks().filter(function (t) { return isTerminal(t.status); });
     if (!closed.length) { toast('Nothing closed to archive'); return; }
     archiveMany(closed, 'closed task');
   });
