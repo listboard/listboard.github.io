@@ -221,6 +221,31 @@ input:focus, textarea:focus, select:focus {
 input[type=checkbox] { accent-color: var(--accent); width: auto; }
 ::placeholder { color: var(--muted); opacity: .8; }
 
+/* ── Segmented control ─────────────────────────────────────────────
+   Two sides of one choice, boxed together so it is obvious they are
+   alternatives rather than two independent buttons. Same shape as the
+   sibling autorolltables.github.io. */
+.segmented {
+  display: inline-flex; align-self: flex-start;
+  gap: 2px; padding: 2px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--bg);
+}
+.seg {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: .4rem .9rem; border: 0; border-radius: 7px;
+  background: none; color: var(--muted);
+  font-family: inherit; font-size: .86rem; white-space: nowrap; cursor: pointer;
+}
+.seg svg {
+  width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.seg:hover { background: var(--tab-hover); color: var(--ink); border-color: transparent; }
+.seg.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.seg.on:hover { background: var(--accent); color: var(--accent-ink); filter: brightness(1.06); }
+.seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* ── Filters ───────────────────────────────────────────────────────── */
 .filters .filter-row {
   display: flex; align-items: baseline; gap: .6rem;
@@ -551,6 +576,26 @@ body.dragging-card, body.dragging-card * {
   border-color: var(--accent); border-style: solid;
   background: var(--accent-wash); color: var(--accent); font-weight: 600;
 }
+
+/* ── Sigil autocomplete ────────────────────────────────────────────
+   Fixed to the viewport, because the filter panels clip their overflow and
+   a menu cut in half is worse than no menu. */
+.ac-menu {
+  position: fixed; z-index: 250;
+  background: var(--card); border: 1px solid var(--accent);
+  border-radius: 8px; box-shadow: 0 6px 20px var(--shadow);
+  overflow-y: auto; max-height: 15rem; padding: .2rem;
+}
+.ac-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+  width: 100%; text-align: left; border: 0; border-radius: 5px;
+  padding: .35rem .5rem; background: none; color: var(--ink);
+  font-family: inherit; font-size: .86rem; cursor: pointer;
+}
+.ac-item:hover { background: var(--row-hover); color: var(--ink); }
+.ac-item.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.ac-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-meta { font-size: .74rem; opacity: .7; flex-shrink: 0; }
 
 /* ── Toast ─────────────────────────────────────────────────────────── */
 #toast {
