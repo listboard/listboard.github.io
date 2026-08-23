@@ -27,6 +27,10 @@ var KEY_DATA = 'lb-data';
 var KEY_THEME = 'lb-theme';
 var KEY_UI = 'lb-ui';
 var KEY_RESCUED = 'lb-data-rescued';
+var KEY_LAST_EXPORT = 'lb-last-export';
+/* How long a board can go unbacked-up before the Settings page starts
+   saying so, and a session gets one quiet reminder. */
+var BACKUP_NAG_DAYS = 14;
 var SCHEMA = 1;
 
 /* The three lanes. The ids are written into storage, so they are permanent:
@@ -909,6 +913,7 @@ function renderArchiveCount() {
 
 function renderAll() {
   renderCounts();
+  renderBackupAge();
   renderArchiveCount();
   renderPicker();
   renderBoard();
@@ -1631,6 +1636,110 @@ function removeTagEverywhere(tag) {
 /* ── Backup ───────────────────────────────────────────────────────────── */
 /* listboard-YYYY-MM-DD-HHMMSS. Seconds are in there so two exports in the
    same minute cannot collide and get silently renamed to "(1)". */
+/* ── Keeping the data alive ───────────────────────────────────────────────
+   localStorage is not a promise. Browsers evict it under pressure, and Safari
+   throws away script-written storage for a site you have not visited in about
+   a week. Three things push back, none of which replaces a real backup:
+
+   - persistent storage, which exempts the origin from that eviction
+   - installing to the home screen, which exempts it in mobile Safari
+   - saying out loud how long it has been since the last export
+
+   Clearing site data by hand still wipes everything, and no web API can stop
+   that. The exported file is the only copy that survives it. */
+
+function persistSupported() {
+  return !!(navigator.storage && navigator.storage.persist && navigator.storage.persisted);
+}
+
+function isInstalled() {
+  return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    navigator.standalone);
+}
+
+/* Chrome decides on the spot and usually says yes for a site with real
+   engagement; Firefox prompts; Safari does not implement it at all. */
+function askPersist() {
+  if (!persistSupported()) { renderPersistStatus(); return; }
+  navigator.storage.persist().then(function (granted) {
+    renderPersistStatus();
+    toast(granted
+      ? 'This browser will keep your tasks unless you clear them yourself'
+      : 'The browser declined for now. Try again after using the board a while.');
+  }, function () { renderPersistStatus(); });
+}
+
+function renderPersistStatus() {
+  var el = $('#persistStatus');
+  if (!el) return;
+  var btn = $('#btnPersist');
+  if (!persistSupported()) {
+    el.textContent = 'This browser does not offer persistent storage. ' +
+      (isInstalled() ? 'It is installed to your home screen, which is the protection that matters here.'
+        : 'Adding it to your home screen is the next best thing, and on iPhone and iPad it is the one that counts.');
+    if (btn) btn.disabled = true;
+    return;
+  }
+  navigator.storage.persisted().then(function (yes) {
+    el.textContent = yes
+      ? 'Storage is persistent: this browser will not evict your tasks to reclaim space.'
+      : 'Storage is not persistent yet, so the browser may evict it to reclaim space.';
+    if (btn) btn.disabled = yes;
+  }, function () {});
+}
+
+function lastExportAt() {
+  var raw = storageGet(KEY_LAST_EXPORT);
+  if (!raw) return null;
+  var d = new Date(raw);
+  return isNaN(d) ? null : d;
+}
+
+function daysSinceExport() {
+  var d = lastExportAt();
+  if (!d) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function renderBackupAge() {
+  var el = $('#backupAge');
+  if (!el) return;
+  var n = data.tasks.length;
+  var days = daysSinceExport();
+  if (!n) { el.textContent = 'Nothing to back up yet.'; el.classList.remove('warn-line'); return; }
+  if (days === null) {
+    el.innerHTML = '<b class="warn">No backup yet.</b> ' + plural(n, 'task') +
+      ' live only in this browser.';
+    el.classList.add('warn-line');
+    return;
+  }
+  var when = fmtWhen(lastExportAt().toISOString());
+  if (days >= BACKUP_NAG_DAYS) {
+    el.innerHTML = '<b class="warn">Last backup was ' + plural(days, 'day') + ' ago</b>, on ' +
+      esc(when) + '.';
+    el.classList.add('warn-line');
+  } else {
+    el.textContent = 'Last backup ' +
+      (days === 0 ? 'today' : days === 1 ? 'yesterday' : plural(days, 'day') + ' ago') +
+      ', on ' + when + '.';
+    el.classList.remove('warn-line');
+  }
+}
+
+/* One reminder per session, and only when there is something to lose. */
+var naggedBackup = false;
+function maybeNagBackup() {
+  if (naggedBackup) return;
+  naggedBackup = true;
+  if (data.tasks.length < 3) return;
+  var days = daysSinceExport();
+  if (days !== null && days < BACKUP_NAG_DAYS) return;
+  toast(days === null
+    ? 'These tasks have never been backed up'
+    : 'Last backup was ' + plural(days, 'day') + ' ago',
+    'Back up', function () { location.hash = 'settings'; route(); exportData(); });
+}
+
 function stamp(d) {
   function p(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
@@ -1676,6 +1785,8 @@ function exportData() {
   var name = 'listboard-' + stamp(now) + '.json';
   var text = JSON.stringify(payload, null, 2);
   var done = 'Exported ' + plural(data.tasks.length, 'task') + ' to ' + name;
+  storageSet(KEY_LAST_EXPORT, now.toISOString());
+  renderBackupAge();
 
   /* On iPad and iPhone a plain download link is a dead end: Safari opens the
      JSON in a tab, or saves it under a name of its own choosing, and the
@@ -2146,6 +2257,11 @@ function init() {
       goTabThenFocus('board', '#boardSearch');
     }
   });
+
+  $('#btnPersist').addEventListener('click', askPersist);
+  renderPersistStatus();
+  /* After first paint, so the reminder never lands on a blank screen. */
+  setTimeout(maybeNagBackup, 1200);
 
   window.addEventListener('hashchange', route);
   renderAll();
