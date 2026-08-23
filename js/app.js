@@ -459,17 +459,58 @@ function allTags() {
 
 /* Pulls #hashtags out of typed text and returns the text without them. Used by
    quick add so a tag can be typed inline without leaving the box. */
-function extractTags(text) {
+/* Compares project names the way a person types them: case, spaces and
+   punctuation all ignored, so "@listboard" finds "Listboard site" only if you
+   spell it "@listboardsite", but "@Listboard" finds "listboard". */
+function normalizeName(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/* Turns an @token into a project id. Active projects win over archived ones,
+   because an archived project is one you have deliberately put away. Returns
+   null when nothing matches and creation was not asked for. */
+function matchProject(token) {
+  var want = normalizeName(token);
+  if (!want) return null;
+  var hit = null;
+  data.projects.forEach(function (p) {
+    if (normalizeName(p.name) !== want) return;
+    if (!hit || (hit.archived && !p.archived)) hit = p;
+  });
+  return hit;
+}
+
+function parseEntry(text) {
   var tags = [];
-  var stripped = String(text).replace(/(^|\s)#([A-Za-z0-9][\w-]*)/g, function (m, pre, tag) {
+  var projectToken = '';
+
+  /* @project first, so a name containing a # cannot be eaten by the tag pass.
+     Both patterns need whitespace or the very start in front of the sigil,
+     which is what keeps "bob@example.com" and "issue#42" out of it. */
+  var stripped = String(text).replace(/(^|\s)@([A-Za-z0-9][\w-]*)/g, function (m, pre, name) {
+    /* A task belongs to one project, so the first @ wins and any others are
+       left in the note as written. */
+    if (projectToken) return m;
+    projectToken = name;
+    return pre;
+  });
+
+  stripped = stripped.replace(/(^|\s)#([A-Za-z0-9][\w-]*)/g, function (m, pre, tag) {
     var c = cleanTag(tag);
     if (c && tags.indexOf(c) < 0) tags.push(c);
     return pre;
   });
-  stripped = stripped.replace(/[ \t]+\n/g, '\n').trim();
-  /* If the note was nothing but tags, keep what was typed: an empty note is
+
+  stripped = stripped.replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').trim();
+  /* If the note was nothing but sigils, keep what was typed: an empty note is
      worse than a redundant one. */
-  return { note: stripped || String(text).trim(), tags: tags };
+  return { note: stripped || String(text).trim(), tags: tags, projectToken: projectToken };
+}
+
+/* Kept as a thin wrapper so callers that only care about tags read cleanly. */
+function extractTags(text) {
+  var p = parseEntry(text);
+  return { note: p.note, tags: p.tags };
 }
 
 /* ── Filters ──────────────────────────────────────────────────────────── */
@@ -1437,14 +1478,16 @@ function tasksFromDrop(dt) {
     /* A bare URL dropped as text is still a URL, and must not have its
        fragment mistaken for a tag. */
     if (isURL(plain)) return [{ title: meta.title && meta.title !== plain ? meta.title : '', note: plain }];
-    var parsed = extractTags(plain);
-    return [{ title: '', note: parsed.note, tags: parsed.tags }];
+    var parsed = parseEntry(plain);
+    return [{ title: '', note: parsed.note, tags: parsed.tags,
+              projectToken: parsed.projectToken }];
   }
 
   var text = htmlToText(html);
   if (text) {
-    var p = extractTags(text);
-    return [{ title: '', note: p.note, tags: p.tags }];
+    var p = parseEntry(text);
+    return [{ title: '', note: p.note, tags: p.tags,
+              projectToken: p.projectToken }];
   }
   return [];
 }
@@ -1452,9 +1495,14 @@ function tasksFromDrop(dt) {
 function handleDrop(dt, status) {
   var made = tasksFromDrop(dt);
   if (!made.length) { toast('Nothing in that drop to make a task from'); return; }
+  /* Dropped text can carry an @project too, so a link filed straight into
+     another board never needs a second trip. */
+  var moved = null;
   var created = made.map(function (m) {
+    var target = projectForEntry(m);
+    if (target.id !== currentProject()) moved = target.id;
     return addTask({
-      project: currentProject(),
+      project: target.id,
       title: m.title || '',
       note: m.note,
       tags: m.tags || [],
@@ -1462,7 +1510,10 @@ function handleDrop(dt, status) {
     });
   });
   renderAll();
-  if (created.length === 1) {
+  if (moved) {
+    toast(plural(created.length, 'task') + ' added to ' + projectName(moved),
+      'Show', function () { ui.project = moved; saveUI(); renderAll(); });
+  } else if (created.length === 1) {
     toast('Added to ' + statusLabel(status), 'Open', function () { openTask(created[0].id); });
   } else {
     toast(plural(created.length, 'task') + ' added to ' + statusLabel(status));
@@ -1639,13 +1690,36 @@ function importData(file) {
 }
 
 /* ── Quick add ────────────────────────────────────────────────────────── */
+/* Works out which project a parsed entry belongs to. An @token that matches
+   nothing creates the project, the same way an unseen #tag simply starts
+   existing; `made` says so, so the caller can offer a way back. */
+function projectForEntry(parsed) {
+  if (!parsed.projectToken) return { id: currentProject(), made: null, revived: null };
+  var hit = matchProject(parsed.projectToken);
+  if (hit) {
+    /* Naming an archived project by hand means you are using it again. Filing
+       into it while it stays archived would drop the task straight out of
+       every board, which looks exactly like losing it. */
+    var revived = null;
+    if (hit.archived) {
+      hit.archived = false;
+      revived = hit;
+      save();
+    }
+    return { id: hit.id, made: null, revived: revived };
+  }
+  var p = addProject(parsed.projectToken);
+  return p ? { id: p.id, made: p, revived: null } : { id: currentProject(), made: null, revived: null };
+}
+
 function quickAdd() {
   var box = $('#quickNote');
   var text = box.value.trim();
   if (!text) { box.focus(); return; }
-  var parsed = extractTags(text);
+  var parsed = parseEntry(text);
+  var target = projectForEntry(parsed);
   var t = addTask({
-    project: currentProject(),
+    project: target.id,
     note: parsed.note,
     tags: parsed.tags,
     status: 'new'
@@ -1653,6 +1727,43 @@ function quickAdd() {
   box.value = '';
   autoGrow(box);
   renderAll();
+
+  /* A brand new project is the one outcome worth being able to take back:
+     "@listbaord" should not quietly leave a typo in the nav for ever. */
+  if (target.made) {
+    toast('Added to a new project, ' + target.made.name, 'Undo', function () {
+      data.tasks = data.tasks.filter(function (x) { return x.id !== t.id; });
+      data.projects = data.projects.filter(function (x) { return x.id !== target.made.id; });
+      if (ui.project === target.made.id) { ui.project = ''; saveUI(); }
+      save();
+      renderAll();
+      box.value = text;
+      autoGrow(box);
+      box.focus();
+      toast('Undone, and the text is back in the box');
+    });
+    return;
+  }
+
+  if (target.revived) {
+    toast('Added to ' + target.revived.name + ', unarchived to take it', 'Show', function () {
+      ui.project = target.id;
+      saveUI();
+      renderAll();
+    });
+    return;
+  }
+
+  /* Filed somewhere other than the board in front of you: say where it went,
+     and offer to follow it. */
+  if (target.id !== currentProject()) {
+    toast('Added to ' + projectName(target.id), 'Show', function () {
+      ui.project = target.id;
+      saveUI();
+      renderAll();
+    });
+    return;
+  }
   toast('Added to New', 'Open', function () { openTask(t.id); });
 }
 
