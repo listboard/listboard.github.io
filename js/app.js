@@ -679,10 +679,15 @@ function renderBoardTagChips() {
   var host = $('#boardTagChips');
   var wrap = host.closest('.filter-row');
   if (wrap) wrap.style.display = tags.length ? '' : 'none';
-  host.innerHTML = tags.map(function (g) {
-    return '<button class="chip' + (boardFilter.tag === g ? ' on' : '') + '" data-btag="' + esc(g) + '">' +
-      esc(g) + '<span class="n">' + counts[g] + '</span></button>';
-  }).join('');
+  /* All comes first and is lit when no tag is chosen, so there is always an
+     obvious way back to the whole board. Clicking the active tag again still
+     clears it, for anyone who learned it that way. */
+  host.innerHTML = '<button class="chip' + (boardFilter.tag === '' ? ' on' : '') +
+    '" data-btag="" title="Show every task on this board">All</button>' +
+    tags.map(function (g) {
+      return '<button class="chip' + (boardFilter.tag === g ? ' on' : '') + '" data-btag="' + esc(g) + '">' +
+        esc(g) + '<span class="n">' + counts[g] + '</span></button>';
+    }).join('');
 }
 
 /* ── Rendering: the flat list ─────────────────────────────────────────── */
@@ -1187,6 +1192,13 @@ function startDrag(card, x, y) {
   var line = document.createElement('div');
   line.className = 'drop-line';
 
+  /* A selection made just before the drag stays painted underneath it, so
+     drop it. iOS in particular will have started one on the long press. */
+  try {
+    var sel = window.getSelection();
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
+  } catch (e) {}
+
   card.classList.add('dragging');
   /* A multi-card drag shows the whole group lifting, and the ghost carries the
      count so it is obvious how much is about to land. */
@@ -1512,10 +1524,36 @@ function removeTagEverywhere(tag) {
 }
 
 /* ── Backup ───────────────────────────────────────────────────────────── */
+/* listboard-YYYY-MM-DD-HHMMSS. Seconds are in there so two exports in the
+   same minute cannot collide and get silently renamed to "(1)". */
 function stamp(d) {
   function p(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
-    '-' + p(d.getHours()) + p(d.getMinutes());
+    '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+/* iPadOS reports itself as a Mac, so the touch points are the giveaway. */
+function isAppleTouch() {
+  var ua = navigator.userAgent || '';
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  return /Mac/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
+/* The anchor has to be in the document before it is clicked: a detached one
+   is ignored outright by Firefox and unreliable elsewhere. */
+function downloadFile(text, name) {
+  var blob = new Blob([text], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () {
+    URL.revokeObjectURL(url);
+    if (a.parentNode) a.parentNode.removeChild(a);
+  }, 1000);
 }
 
 function exportData() {
@@ -1531,13 +1569,29 @@ function exportData() {
   /* Every export keeps its own name, so backups accumulate instead of the
      browser silently appending "(1)" and leaving you to guess which is newest. */
   var name = 'listboard-' + stamp(now) + '.json';
-  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-  $('#ioStatus').textContent = 'Exported ' + plural(data.tasks.length, 'task') + ' to ' + name;
+  var text = JSON.stringify(payload, null, 2);
+  var done = 'Exported ' + plural(data.tasks.length, 'task') + ' to ' + name;
+
+  /* On iPad and iPhone a plain download link is a dead end: Safari opens the
+     JSON in a tab, or saves it under a name of its own choosing, and the
+     stamped filename is lost. The share sheet hands over a real File, so
+     "Save to Files" keeps the name. */
+  if (isAppleTouch() && window.File && navigator.canShare) {
+    var file = new File([text], name, { type: 'application/json' });
+    if (navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: name }).then(function () {
+        $('#ioStatus').textContent = done;
+      }, function (err) {
+        /* Cancelling the sheet is not a failure worth shouting about. */
+        if (err && err.name === 'AbortError') return;
+        downloadFile(text, name);
+        $('#ioStatus').textContent = done;
+      });
+      return;
+    }
+  }
+  downloadFile(text, name);
+  $('#ioStatus').textContent = done;
 }
 
 function importData(file) {
@@ -1840,6 +1894,37 @@ function init() {
   $('#importFile').addEventListener('change', function () {
     if (this.files && this.files[0]) importData(this.files[0]);
     this.value = '';
+  });
+
+  /* The import zone takes a dropped backup as well as a click. It sits inside
+     the document-level drop guard added for the board, so it has to claim the
+     event itself. */
+  var zone = $('#importDrop');
+  zone.addEventListener('click', function () { $('#importFile').click(); });
+  zone.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#importFile').click(); }
+  });
+  zone.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('over');
+  });
+  zone.addEventListener('dragleave', function () { zone.classList.remove('over'); });
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.remove('over');
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) { $('#ioStatus').textContent = 'That drop had no file in it.'; return; }
+    /* Checked by name rather than by type: a .json dragged out of some file
+       managers arrives with an empty or invented MIME type. importData reads
+       the contents anyway and says so if they are not a backup. */
+    if (!/\.json$/i.test(f.name)) {
+      $('#ioStatus').textContent = 'Backups are .json files. "' + f.name + '" is not one.';
+      return;
+    }
+    importData(f);
   });
   $('#btnArchiveClosed').addEventListener('click', function () {
     /* Every project, unlike the board's own Archive all, which is scoped to

@@ -17,7 +17,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=5">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -229,6 +229,16 @@
       <button id="btnImport">Import backup</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
+    <!-- Also a drop target, so a backup can be dragged straight in from the
+         file manager without going through the picker. -->
+    <div class="dropzone" id="importDrop" tabindex="0" role="button"
+         aria-label="Drop a backup file here, or press Enter to browse">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 16V4M12 4L8 8M12 4l4 4"/>
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+      </svg>
+      <span>Drop a <b>.json</b> backup here, or click to browse</span>
+    </div>
     <div id="ioStatus" class="hint" style="margin-top:.6rem"></div>
   </section>
 
@@ -276,7 +286,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=5"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->

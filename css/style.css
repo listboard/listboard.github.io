@@ -302,7 +302,14 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
   padding: .55rem .65rem; cursor: pointer; position: relative;
   /* pan-y keeps the column scrollable on a phone: a drag only starts after
      the long-press timer fires, and only then do we swallow the move. */
-  touch-action: pan-y; user-select: none;
+  touch-action: pan-y;
+  /* Safari reads the prefixed properties, and only the prefixed ones. Without
+     these, the long press that picks a card up on a phone or iPad starts an
+     iOS text selection instead: the blue overlay, the grab handles and the
+     magnifier all fight the drag. -webkit-touch-callout has to be pre-emptive,
+     because by the time a drag is under way the callout has already begun. */
+  user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
 }
 .card:hover { border-color: var(--accent); border-left-color: var(--st); }
 .card-title { font-weight: 600; font-size: .9rem; margin-bottom: .15rem; word-break: break-word; }
@@ -371,6 +378,13 @@ input[type=checkbox] { accent-color: var(--accent); width: auto; }
 .selbar button[disabled]:hover { border-color: var(--line); color: var(--ink); }
 body.dragging-card { cursor: grabbing; }
 body.dragging-card * { cursor: grabbing !important; }
+/* While a card is actually in the air, nothing anywhere is selectable. The
+   card itself is covered above; this catches the text a finger sweeps across
+   on the way to another lane. */
+body.dragging-card, body.dragging-card * {
+  user-select: none !important; -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
 
 /* ── List rows ─────────────────────────────────────────────────────── */
 .trow {
@@ -472,6 +486,26 @@ body.dragging-card * { cursor: grabbing !important; }
 .activity li { padding: .15rem 0; border-bottom: 1px solid var(--line-soft); }
 .activity li:last-child { border-bottom: none; }
 .drawer-foot { display: flex; gap: .4rem; margin-top: 1.4rem; padding-top: .9rem; border-top: 1px solid var(--line); }
+
+/* ── Import drop zone ──────────────────────────────────────────────── */
+.dropzone {
+  display: flex; align-items: center; justify-content: center; gap: .6rem;
+  margin-top: .7rem; padding: 1.1rem .8rem;
+  border: 1px dashed var(--line); border-radius: 9px;
+  color: var(--muted); font-size: .86rem; text-align: center;
+  cursor: pointer; background: var(--card);
+}
+.dropzone svg {
+  width: 20px; height: 20px; flex-shrink: 0; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.dropzone:hover, .dropzone:focus-visible {
+  border-color: var(--accent); color: var(--accent); outline: none;
+}
+.dropzone.over {
+  border-color: var(--accent); border-style: solid;
+  background: var(--accent-wash); color: var(--accent); font-weight: 600;
+}
 
 /* ── Toast ─────────────────────────────────────────────────────────── */
 #toast {
