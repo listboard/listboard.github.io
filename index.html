@@ -61,6 +61,9 @@
     <button data-tab="tags" title="Every tag in use, and what is filed under it">
       <svg viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg>
       <span class="tab-label">Tags <span id="tagCount" class="pill"></span></span></button>
+    <button data-tab="about" title="How Listboard works, and what happens to your data">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.8"/></svg>
+      <span class="tab-label">About</span></button>
   </div>
 
   <!-- Settings sits in its own ruled-off block at the foot of the rail. On a
@@ -81,6 +84,8 @@
   <div class="more-grid">
     <button class="more-tile" type="button" data-more="tags">
       <span class="tile-mark"><svg viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.2" cy="8.2" r="1.4"/></svg></span><span>Tags</span></button>
+    <button class="more-tile" type="button" data-more="about">
+      <span class="tile-mark"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.8"/></svg></span><span>About</span></button>
     <button class="more-tile" type="button" data-more="settings">
       <span class="tile-mark"><svg class="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span>Settings</span></button>
   </div>
@@ -197,15 +202,112 @@
   <div id="tagRows"></div>
 </div>
 
+<!-- About -->
+<div class="tabpage maxw" id="tab-about">
+  <div class="page-title">
+    <h2>About Listboard</h2>
+    <div class="page-sub">What it does, how to drive it, and what happens to your tasks.</div>
+  </div>
+
+  <section class="panel">
+    <div class="mod-h">The short version</div>
+    <p class="lede">
+      Listboard is a kanban board for project tasks that runs entirely in your
+      browser. There is no account, no server and nothing to install. A task
+      needs nothing but a note; everything else is optional.
+    </p>
+    <ol class="steps">
+      <li><b>Jot a task.</b> Type into the box at the top of the Board and press
+        <kbd>Enter</kbd>. Add <b>#tag</b> to tag it and <b>@project</b> to file it
+        on another board, both without leaving the keyboard. Typing either one
+        offers what already exists, so you are not retyping names.</li>
+      <li><b>Move it along.</b> Drag a card between lanes. On a phone or tablet,
+        press and hold for a moment first, then drag. Shift-click several cards
+        to move or archive them together.</li>
+      <li><b>Open it.</b> Click a card for its title, note, tags, project, due
+        date, priority and a running thread of comments, plus a history of
+        everywhere it has been.</li>
+      <li><b>Finish with it.</b> Archiving is how a task leaves a board without
+        leaving Listboard: it keeps its lane, comments and history, and lives
+        under <b>List &rarr; Status &rarr; Archived</b>, where one click reopens it.</li>
+      <li><b>Find it again.</b> The Board filters by project, tag and text. The
+        List searches everything, everywhere, including the archive.</li>
+    </ol>
+  </section>
+
+  <section class="panel">
+    <div class="mod-h">Backups <small>the part worth reading</small></div>
+    <p class="lede">
+      Your tasks live in this browser, under one key in its local storage, and
+      nowhere else. Nothing is uploaded and nothing is synced. That is what
+      makes the app account-free, and it is also the whole risk:
+    </p>
+    <ul class="plain">
+      <li>They do not follow you to another browser, another device or a private
+        window. Export and import is the way across.</li>
+      <li><b>Clearing site data deletes them.</b> No web page can prevent that.</li>
+      <li>Mobile Safari discards script-written storage for a site you have not
+        opened in about a week. Adding Listboard to your home screen exempts it,
+        which is the single most useful thing you can do on an iPhone or iPad.</li>
+    </ul>
+    <p class="lede">
+      So: <b>export a backup now and then</b>. Settings writes the whole board,
+      lanes included, to one JSON file named for the moment you took it. Import
+      merges a file back in and never deletes anything, so restoring an old
+      backup cannot undo newer work. Drop a backup file straight onto the import
+      box, or use the picker. Settings tells you how long it has been since the
+      last one.
+    </p>
+    <div class="row wrap">
+      <button class="mini" data-goto="settings">Open Settings</button>
+    </div>
+  </section>
+
+  <div class="twocol">
+    <section class="panel">
+      <div class="mod-h">Storage</div>
+      <div id="storageStatus" class="hint"></div>
+      <div class="row wrap" style="margin-top:.7rem">
+        <button class="mini" id="btnPersist">Ask to keep this data</button>
+      </div>
+      <div id="persistStatus" class="hint" style="margin-top:.5rem"></div>
+    </section>
+
+    <section class="panel">
+      <div class="mod-h">Keyboard</div>
+      <ul class="keys">
+        <li><kbd>n</kbd> new task on the current board</li>
+        <li><kbd>/</kbd> jump to the search box</li>
+        <li><kbd>Esc</kbd> close the task panel, the More sheet or a selection</li>
+        <li><kbd>Enter</kbd> in the quick-add box files the task,
+          <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</li>
+        <li><kbd>Tab</kbd> takes the highlighted autocomplete entry,
+          <kbd>&uarr;</kbd><kbd>&darr;</kbd> walk the list</li>
+        <li><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> posts a comment</li>
+      </ul>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="mod-h">Credits</div>
+    <p class="lede">
+      Created by <a href="https://github.com/dangeratio" target="_blank" rel="noopener noreferrer">dangeratio</a>.
+    </p>
+    <p class="lede">
+      Report issues at <a href="https://github.com/listboard/listboard.github.io/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.
+    </p>
+  </section>
+</div>
+
 <!-- Settings -->
 <div class="tabpage maxw" id="tab-settings">
   <div class="page-title">
     <h2>Settings</h2>
-    <div class="page-sub">Appearance, backups, and where your tasks actually live.</div>
+    <div class="page-sub">Appearance, lanes, and what happens to your tasks.</div>
   </div>
 
-  <div class="twocol">
-    <section class="panel">
+  <section class="panel">
+    <div class="twocol-inner">
       <div class="mod-h">Theme</div>
       <p class="lede">Dark is the default. Your choice is remembered in this browser.</p>
       <!-- A segmented control rather than two loose buttons, so it reads as
@@ -220,17 +322,8 @@
           Light
         </button>
       </div>
-    </section>
-
-    <section class="panel">
-      <div class="mod-h">Storage</div>
-      <div id="storageStatus" class="hint"></div>
-      <div class="row wrap" style="margin-top:.7rem">
-        <button class="mini" id="btnPersist">Ask to keep this data</button>
-      </div>
-      <div id="persistStatus" class="hint" style="margin-top:.5rem"></div>
-    </section>
-  </div>
+    </div>
+  </section>
 
   <section class="panel">
     <div class="mod-h">Lanes <small>the columns on every board</small></div>
@@ -307,15 +400,6 @@
     </div>
   </section>
 
-  <section class="panel">
-    <div class="mod-h">Keyboard</div>
-    <ul class="keys">
-      <li><kbd>n</kbd> new task on the current board</li>
-      <li><kbd>/</kbd> jump to the search box</li>
-      <li><kbd>Esc</kbd> close the task panel or the More sheet</li>
-      <li><kbd>Enter</kbd> in the quick-add box files the task</li>
-    </ul>
-  </section>
 </div>
 
 </main>

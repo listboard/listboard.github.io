@@ -76,7 +76,7 @@ Then open http://localhost:8124. The files are:
 
 | File | What is in it |
 | --- | --- |
-| `index.html` | The whole shell: nav, five tab pages, the task drawer |
+| `index.html` | The whole shell: nav, six tab pages, the task drawer |
 | `css/style.css` | Palette, the rail/bottom-bar layout, board and card styling |
 | `js/app.js` | Data model, storage, rendering, drag-and-drop, backup |
 | `favicon.svg` | The small mark: three solid lanes, in the accent yellow |
@@ -140,13 +140,14 @@ is actually doing.
 ## Layout
 
 A sticky left rail on desktop and tablet, a fixed bottom bar on phones (≤700px)
-with the rail's foot collapsing into a More sheet. On a phone the three lanes
+with the rail's foot collapsing into a More sheet. The bar holds four buttons
+plus More; Tags and About are the two that live in the sheet. On a phone the three lanes
 become a snapping horizontal carousel, and the task drawer becomes a full-height
 sheet that stops above the bottom bar.
 
 ## Deep links
 
-- `#board`, `#list`, `#projects`, `#tags`, `#settings` open a tab
+- `#board`, `#list`, `#projects`, `#tags`, `#about`, `#settings` open a tab
 - `#task/<id>` opens a task directly (the Link button in the task panel copies one)
 - `#project/<id>` switches the board to a project
 

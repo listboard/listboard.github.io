@@ -880,7 +880,7 @@ function setTheme(mode) {
 }
 
 /* ── Tabs and routing ─────────────────────────────────────────────────── */
-var TABS = ['board', 'list', 'projects', 'tags', 'settings'];
+var TABS = ['board', 'list', 'projects', 'tags', 'about', 'settings'];
 
 function showTab(name) {
   /* A selection belongs to the board you made it on: leaving takes it with
@@ -2919,6 +2919,11 @@ function init() {
   });
 
   $('#btnPersist').addEventListener('click', askPersist);
+  /* About links through to Settings for the things it only describes. */
+  $('#tab-about').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-goto]');
+    if (b) location.hash = b.dataset.goto;
+  });
   renderPersistStatus();
   /* After first paint, so the reminder never lands on a blank screen. */
   setTimeout(maybeNagBackup, 1200);

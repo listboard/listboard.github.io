@@ -188,6 +188,13 @@ h1, .sub { display: none; }
 .twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
 .keys { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: .88rem; }
 .keys li { margin-bottom: .2rem; }
+/* About page prose */
+.steps { margin: 0; padding-left: 1.3rem; color: var(--muted); font-size: .9rem; max-width: 75ch; }
+.steps li { margin-bottom: .6rem; }
+.steps b { color: var(--ink); }
+.plain { margin: 0 0 .8rem; padding-left: 1.1rem; color: var(--muted); font-size: .9rem; max-width: 75ch; }
+.plain li { margin-bottom: .35rem; }
+.twocol-inner { display: block; }
 kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em;
   background: var(--card); border: 1px solid var(--line); border-bottom-width: 2px;
@@ -650,7 +657,9 @@ body.dragging-card, body.dragging-card * {
   /* The rail's list and foot dissolve so their buttons become direct children
      of the bar and share it out evenly, Settings last as before. */
   .tab-list, .tabs-foot { display: contents; }
-  .tabs [data-tab="tags"] { display: none; }
+  /* The bar has room for four buttons plus More. Tags and About are the
+     two that fall back into the More sheet. */
+  .tabs [data-tab="tags"], .tabs [data-tab="about"] { display: none; }
   .tabs button {
     flex: 1; flex-direction: column; gap: .18rem; justify-content: center;
     padding: .3rem 0; margin-top: 0; font-size: .62rem; font-weight: 600;
