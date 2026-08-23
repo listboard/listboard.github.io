@@ -7,13 +7,19 @@
      { schema, projects: [Project], tasks: [Task] }
 
      Project = { id, name, created, archived }
-     Task    = { id, project, title, note, tags[], status, order,
+     Task    = { id, project, title, note, tags[], status, order, archived,
                  created, updated, due, priority,
                  comments: [{ id, body, created }],
                  activity: [{ at, what }] }
 
    A task needs nothing but a note. Title, tags, due date and priority are all
    optional and absent rather than empty when unused.
+
+   Archiving, not deleting, is how a task leaves the board. An archived task
+   keeps its lane, its comments and its history; it is simply hidden from the
+   board and from the List page until you ask for it by filtering Status to
+   Archived, and it can be reopened straight back into the lane it left.
+   Permanent deletion exists, but only for something already archived.
 
    No frameworks, no build step, no service worker. */
 
@@ -112,6 +118,9 @@ function normalizeTask(t) {
     note: typeof t.note === 'string' ? t.note : '',
     tags: Array.isArray(t.tags) ? t.tags.map(cleanTag).filter(Boolean) : [],
     status: STATUS_IDS.indexOf(t.status) >= 0 ? t.status : 'new',
+    /* Archived is deliberately separate from status: a task keeps the lane it
+       was in, so reopening puts it back where it was rather than at New. */
+    archived: !!t.archived,
     order: typeof t.order === 'number' ? t.order : 0,
     created: t.created || nowISO(),
     updated: t.updated || t.created || nowISO(),
@@ -233,8 +242,17 @@ function currentProject() {
   return projectById(ui.project) && !projectById(ui.project).archived ? ui.project : '';
 }
 
+/* Everything that is still in play. The archive is only ever reached through
+   the List page's Status filter, so every other count and view starts here. */
+function liveTasks() {
+  return data.tasks.filter(function (t) { return !t.archived; });
+}
+function archivedTasks() {
+  return data.tasks.filter(function (t) { return t.archived; });
+}
+
 function tasksOf(projectId) {
-  return data.tasks.filter(function (t) {
+  return liveTasks().filter(function (t) {
     if (projectId === '') {
       /* The all-projects board hides tasks filed under an archived project so
          archiving actually quiets the board down. */
@@ -309,6 +327,38 @@ function setStatus(id, status) {
   moveTask(id, status, lane.length ? lane[0].id : null);
 }
 
+/* Archiving is the ordinary way a task leaves the board, and it is completely
+   reversible: nothing about the task changes except the flag. */
+function archiveTask(id) {
+  var t = taskById(id);
+  if (!t || t.archived) return;
+  t.archived = true;
+  logActivity(t, 'Archived from ' + statusLabel(t.status));
+  touch(t);
+  save();
+  renderAll();
+  toast('Archived. Find it under List → Status → Archived.', 'Undo', function () {
+    reopenTask(id, true);
+  });
+}
+
+/* Puts a task back in the lane it left. Silent when it is part of an undo, so
+   the toast does not chase its own tail. */
+function reopenTask(id, quiet) {
+  var t = taskById(id);
+  if (!t || !t.archived) return;
+  t.archived = false;
+  logActivity(t, 'Reopened into ' + statusLabel(t.status));
+  touch(t);
+  /* Back to the top of its lane: whatever its old neighbours were doing while
+     it was away, this is the card you just acted on. */
+  var lane = laneOf(t.project, t.status).filter(function (x) { return x.id !== id; });
+  t.order = lane.length ? lane[0].order - 10 : 0;
+  save();
+  renderAll();
+  if (!quiet) toast('Reopened into ' + statusLabel(t.status));
+}
+
 var lastDeleted = null;
 function deleteTask(id) {
   var i = data.tasks.findIndex(function (t) { return t.id === id; });
@@ -329,7 +379,7 @@ function deleteTask(id) {
 
 function allTags() {
   var counts = {};
-  data.tasks.forEach(function (t) {
+  liveTasks().forEach(function (t) {
     t.tags.forEach(function (g) { counts[g] = (counts[g] || 0) + 1; });
   });
   return Object.keys(counts).sort().map(function (g) { return { tag: g, n: counts[g] }; });
@@ -364,8 +414,15 @@ function matchesBoard(t) {
   return true;
 }
 function matchesList(t) {
+  /* The archive is reachable one way only: Status → Archived. Every other
+     filter combination, including "Any", is about live work. */
+  if (listFilter.status === 'archived') {
+    if (!t.archived) return false;
+  } else {
+    if (t.archived) return false;
+    if (listFilter.status && t.status !== listFilter.status) return false;
+  }
   if (listFilter.project && t.project !== listFilter.project) return false;
-  if (listFilter.status && t.status !== listFilter.status) return false;
   if (listFilter.tag && t.tags.indexOf(listFilter.tag) < 0) return false;
   if (listFilter.q && textOf(t).indexOf(listFilter.q) < 0) return false;
   return true;
@@ -412,10 +469,11 @@ function route() {
 
 /* ── Rendering: nav counts ────────────────────────────────────────────── */
 function renderCounts() {
-  var open = data.tasks.filter(function (t) { return t.status !== 'done'; }).length;
+  var live = liveTasks();
+  var open = live.filter(function (t) { return t.status !== 'done'; }).length;
   var boardOpen = tasksOf(currentProject()).filter(function (t) { return t.status !== 'done'; }).length;
   $('#boardCount').textContent = boardOpen ? String(boardOpen) : '';
-  $('#listCount').textContent = data.tasks.length ? String(data.tasks.length) : '';
+  $('#listCount').textContent = live.length ? String(live.length) : '';
   $('#projCount').textContent = activeProjects().length ? String(activeProjects().length) : '';
   $('#tagCount').textContent = allTags().length ? String(allTags().length) : '';
   document.title = open ? 'Listboard (' + open + ')' : 'Listboard';
@@ -523,27 +581,39 @@ function renderBoardTagChips() {
 
 /* ── Rendering: the flat list ─────────────────────────────────────────── */
 function renderListChips() {
+  /* Project counts follow whichever side of the archive you are looking at,
+     so the numbers always add up to the rows underneath. */
+  var pool = listFilter.status === 'archived' ? archivedTasks() : liveTasks();
   $('#listProjChips').innerHTML = ['<button class="chip' + (listFilter.project === '' ? ' on' : '') +
     '" data-lproj="">Any</button>'].concat(activeProjects().map(function (p) {
-      var n = data.tasks.filter(function (t) { return t.project === p.id; }).length;
+      var n = pool.filter(function (t) { return t.project === p.id; }).length;
       return '<button class="chip' + (listFilter.project === p.id ? ' on' : '') +
         '" data-lproj="' + esc(p.id) + '">' + esc(p.name) + '<span class="n">' + n + '</span></button>';
     })).join('');
 
+  var nArchived = archivedTasks().length;
   $('#listStatusChips').innerHTML = ['<button class="chip' + (listFilter.status === '' ? ' on' : '') +
     '" data-lstatus="">Any</button>'].concat(STATUSES.map(function (s) {
-      var n = data.tasks.filter(function (t) { return t.status === s.id; }).length;
+      var n = liveTasks().filter(function (t) { return t.status === s.id; }).length;
       return '<button class="chip' + (listFilter.status === s.id ? ' on' : '') +
         '" data-lstatus="' + s.id + '">' + esc(s.label) + '<span class="n">' + n + '</span></button>';
-    })).join('');
+    })).concat([
+      /* The only door into the archive. It stays visible at zero so it is
+         findable before there is anything behind it. */
+      '<button class="chip' + (listFilter.status === 'archived' ? ' on' : '') +
+      '" data-lstatus="archived" title="Archived tasks, hidden from every board">Archived' +
+      '<span class="n">' + nArchived + '</span></button>'
+    ]).join('');
 
-  var tags = allTags();
+  var tcounts = {};
+  pool.forEach(function (t) { t.tags.forEach(function (g) { tcounts[g] = (tcounts[g] || 0) + 1; }); });
+  var tags = Object.keys(tcounts).sort();
   var row = $('#listTagChips').closest('.filter-row');
   if (row) row.style.display = tags.length ? '' : 'none';
   $('#listTagChips').innerHTML = ['<button class="chip' + (listFilter.tag === '' ? ' on' : '') +
     '" data-ltag="">Any</button>'].concat(tags.map(function (g) {
-      return '<button class="chip' + (listFilter.tag === g.tag ? ' on' : '') +
-        '" data-ltag="' + esc(g.tag) + '">' + esc(g.tag) + '<span class="n">' + g.n + '</span></button>';
+      return '<button class="chip' + (listFilter.tag === g ? ' on' : '') +
+        '" data-ltag="' + esc(g) + '">' + esc(g) + '<span class="n">' + tcounts[g] + '</span></button>';
     })).join('');
 }
 
@@ -552,19 +622,24 @@ function renderList() {
   var rows = data.tasks.filter(matchesList).sort(function (a, b) {
     return (b.updated || '').localeCompare(a.updated || '');
   });
-  $('#listResultCount').textContent = rows.length === data.tasks.length
+  var inArchive = listFilter.status === 'archived';
+  var total = inArchive ? archivedTasks().length : liveTasks().length;
+  $('#listResultCount').textContent = (rows.length === total
     ? plural(rows.length, 'task')
-    : rows.length + ' of ' + data.tasks.length + ' tasks';
+    : rows.length + ' of ' + total + ' tasks') + (inArchive ? ' in the archive' : '');
 
   if (!rows.length) {
     $('#listRows').innerHTML = '<div class="empty">' +
-      (data.tasks.length ? 'Nothing matches those filters.' : 'No tasks yet. Add one on the Board.') +
+      (inArchive ? 'The archive is empty. Archiving a task from its panel puts it here.'
+        : data.tasks.length ? 'Nothing matches those filters.'
+          : 'No tasks yet. Add one on the Board.') +
       '</div>';
     return;
   }
   $('#listRows').innerHTML = rows.map(function (t) {
     var sub = t.title ? t.note : '';
-    return '<div class="trow" data-id="' + esc(t.id) + '" style="--st:' + statusHue(t.status) + '">' +
+    return '<div class="trow' + (t.archived ? ' is-archived' : '') + '" data-id="' + esc(t.id) +
+      '" style="--st:' + statusHue(t.status) + '">' +
       '<div class="trow-main">' +
       '<div class="trow-title">' + esc(t.title || t.note.split('\n')[0]) + '</div>' +
       (sub ? '<div class="trow-note">' + esc(sub) + '</div>' : '') +
@@ -576,6 +651,9 @@ function renderList() {
       '<div class="trow-side">' +
       '<span class="status-badge">' + esc(statusLabel(t.status)) + '</span>' +
       '<span class="proj-badge">' + esc(projectName(t.project)) + '</span>' +
+      /* Reopening is the point of an archive, so it is one click from the row
+         rather than buried in the task panel. */
+      (t.archived ? '<button class="mini" data-reopen="' + esc(t.id) + '">Reopen</button>' : '') +
       '</div></div>';
   }).join('');
 }
@@ -587,11 +665,13 @@ function renderProjects() {
     return;
   }
   $('#projectRows').innerHTML = data.projects.map(function (p) {
-    var all = data.tasks.filter(function (t) { return t.project === p.id; });
+    var all = liveTasks().filter(function (t) { return t.project === p.id; });
     var open = all.filter(function (t) { return t.status !== 'done'; }).length;
+    var arch = archivedTasks().filter(function (t) { return t.project === p.id; }).length;
     return '<div class="arow' + (p.archived ? ' archived' : '') + '" data-pid="' + esc(p.id) + '">' +
       '<span class="arow-name">' + esc(p.name) + (p.archived ? ' <span class="arow-stats">(archived)</span>' : '') + '</span>' +
-      '<span class="arow-stats">' + open + ' open / ' + all.length + ' total</span>' +
+      '<span class="arow-stats">' + open + ' open / ' + all.length + ' total' +
+      (arch ? ' · ' + arch + ' archived' : '') + '</span>' +
       '<span class="arow-acts">' +
       (p.archived ? '' : '<button class="mini" data-pact="open">Open board</button>') +
       '<button class="mini" data-pact="rename">Rename</button>' +
@@ -639,8 +719,14 @@ function renderStorageStatus() {
   $('#storageStatus').innerHTML = lines.map(function (l) { return '<p style="margin:.35rem 0">' + l + '</p>'; }).join('');
 }
 
+function renderArchiveCount() {
+  var n = archivedTasks().length;
+  $('#archiveCount').textContent = n ? plural(n, 'task') + ' archived' : 'nothing archived yet';
+}
+
 function renderAll() {
   renderCounts();
+  renderArchiveCount();
   renderPicker();
   renderBoard();
   renderList();
@@ -679,6 +765,7 @@ function drawTaskDrawer(t) {
   d.innerHTML =
     '<div class="drawer-head">' +
     '<span class="status-badge" id="dBadge" style="--st:' + statusHue(t.status) + '">' + esc(statusLabel(t.status)) + '</span>' +
+    (t.archived ? '<span class="status-badge archived-badge">Archived</span>' : '') +
     '<span class="spacer"></span>' +
     '<button class="mini" id="dCopyLink" title="Copy a link straight to this task">Link</button>' +
     '<button class="drawer-x" id="dClose" title="Close (Esc)">&times;</button>' +
@@ -726,7 +813,12 @@ function drawTaskDrawer(t) {
     '<div class="dfield"><label>History</label><ul class="activity" id="dActivity"></ul></div>' +
 
     '<div class="drawer-foot">' +
-    '<button class="danger" id="dDelete">Delete task</button>' +
+    (t.archived
+      /* Permanent deletion is deliberately a second step, reachable only once
+         a task is already out of the way. */
+      ? '<button class="primary" id="dReopen">Reopen task</button>' +
+        '<button class="danger" id="dDelete">Delete permanently</button>'
+      : '<button id="dArchive">Archive task</button>') +
     '<span style="flex:1"></span>' +
     '<span class="hint" id="dSaved">Saved automatically</span>' +
     '</div>';
@@ -814,6 +906,14 @@ function wireDrawer(t) {
   $('#dStatus', d).addEventListener('click', function (e) {
     var b = e.target.closest('[data-st]');
     if (!b) return;
+    /* Picking a lane for an archived task means you want it back: reopen it
+       rather than quietly filing it into a lane nobody can see. */
+    if (t.archived) {
+      t.status = b.dataset.st;
+      reopenTask(t.id);
+      drawTaskDrawer(taskById(t.id));
+      return;
+    }
     setStatus(t.id, b.dataset.st);
     $$('#dStatus button', d).forEach(function (x) { x.classList.toggle('on', x === b); });
     var badge = $('#dBadge', d);
@@ -892,11 +992,27 @@ function wireDrawer(t) {
     flashSaved();
   });
 
-  $('#dDelete', d).addEventListener('click', function () {
-    var id = t.id;
-    closeDrawer();
-    deleteTask(id);
-  });
+  if ($('#dArchive', d)) {
+    $('#dArchive', d).addEventListener('click', function () {
+      var id = t.id;
+      closeDrawer();
+      archiveTask(id);
+    });
+  }
+  if ($('#dReopen', d)) {
+    $('#dReopen', d).addEventListener('click', function () {
+      reopenTask(t.id);
+      drawTaskDrawer(taskById(t.id));
+    });
+  }
+  if ($('#dDelete', d)) {
+    $('#dDelete', d).addEventListener('click', function () {
+      if (!window.confirm('Permanently delete this task? Undo covers this for a few seconds and nothing after that.')) return;
+      var id = t.id;
+      closeDrawer();
+      deleteTask(id);
+    });
+  }
 }
 
 function wireTagInput(t) {
@@ -1327,6 +1443,8 @@ function init() {
     renderList();
   });
   $('#tab-list').addEventListener('click', function (e) {
+    var re = e.target.closest('[data-reopen]');
+    if (re) { reopenTask(re.dataset.reopen); return; }
     var b = e.target.closest('[data-lproj], [data-lstatus], [data-ltag]');
     if (b) {
       if (b.dataset.lproj !== undefined) listFilter.project = b.dataset.lproj;
@@ -1399,11 +1517,33 @@ function init() {
     if (this.files && this.files[0]) importData(this.files[0]);
     this.value = '';
   });
-  $('#btnPurgeClosed').addEventListener('click', function () {
-    var n = data.tasks.filter(function (t) { return t.status === 'done'; }).length;
-    if (!n) { toast('Nothing closed to delete'); return; }
-    if (!window.confirm('Permanently delete ' + plural(n, 'closed task') + '? This cannot be undone.')) return;
-    data.tasks = data.tasks.filter(function (t) { return t.status !== 'done'; });
+  $('#btnArchiveClosed').addEventListener('click', function () {
+    var closed = liveTasks().filter(function (t) { return t.status === 'done'; });
+    if (!closed.length) { toast('Nothing closed to archive'); return; }
+    closed.forEach(function (t) {
+      t.archived = true;
+      logActivity(t, 'Archived from ' + statusLabel(t.status));
+      touch(t);
+    });
+    save(); renderAll();
+    /* Reversible in bulk too: undo puts every one of them back. */
+    toast(plural(closed.length, 'task') + ' archived', 'Undo', function () {
+      closed.forEach(function (t) { t.archived = false; logActivity(t, 'Reopened into ' + statusLabel(t.status)); });
+      save(); renderAll();
+      toast('Put back');
+    });
+  });
+  $('#btnViewArchive').addEventListener('click', function () {
+    listFilter = { q: '', project: '', status: 'archived', tag: '' };
+    $('#listSearch').value = '';
+    renderList();
+    location.hash = 'list';
+  });
+  $('#btnPurgeArchived').addEventListener('click', function () {
+    var n = archivedTasks().length;
+    if (!n) { toast('The archive is empty'); return; }
+    if (!window.confirm('Permanently delete ' + plural(n, 'archived task') + '? This cannot be undone.')) return;
+    data.tasks = liveTasks();
     save(); renderAll();
     toast(plural(n, 'task') + ' deleted');
   });
