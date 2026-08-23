@@ -1204,6 +1204,26 @@ function wireTagInput(t) {
    'flying' copy follows the pointer, and a drop line shows where it will land. */
 var drag = null;
 
+/* `touch-action: pan-y` on a card is what lets a finger scroll the lane, but
+   it also hands vertical panning to the browser, and a gesture the browser has
+   claimed cannot be cancelled afterwards. On iPad that means a long press that
+   becomes a drag still scrolls the page underneath it.
+
+   So the moment a touch drag really starts, scrolling is blocked for the rest
+   of that gesture by a non-passive touchmove listener. It has to be non-passive
+   or preventDefault is ignored, and it has to be added at drag start rather
+   than up front, or the board could never be scrolled with a finger at all. */
+function blockTouchScroll(e) {
+  if (e.cancelable) e.preventDefault();
+}
+function holdScroll(on) {
+  if (on) {
+    document.addEventListener('touchmove', blockTouchScroll, { passive: false });
+  } else {
+    document.removeEventListener('touchmove', blockTouchScroll, { passive: false });
+  }
+}
+
 function cardUnderPoint(x, y, exceptEl) {
   var els = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
   for (var i = 0; i < els.length; i++) {
@@ -1241,6 +1261,7 @@ function startDrag(card, x, y) {
   } catch (e) {}
 
   card.classList.add('dragging');
+  holdScroll(true);
   /* A multi-card drag shows the whole group lifting, and the ghost carries the
      count so it is obvious how much is about to land. */
   if (isSelected(card.dataset.id) && selection.length > 1) {
@@ -1292,6 +1313,7 @@ function moveDrag(x, y) {
 }
 
 function endDrag(commit) {
+  holdScroll(false);
   if (drag.fly && drag.fly.parentNode) drag.fly.parentNode.removeChild(drag.fly);
   if (drag.line && drag.line.parentNode) drag.line.parentNode.removeChild(drag.line);
   $$('#board .card.dragging').forEach(function (c) { c.classList.remove('dragging'); });
@@ -1394,6 +1416,7 @@ function onPointerUp(e) {
 function onPointerCancel() {
   if (!drag) return;
   clearTimeout(drag.timer);
+  holdScroll(false);
   if (drag.active) endDrag(false); else drag = null;
 }
 
