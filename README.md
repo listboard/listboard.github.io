@@ -111,6 +111,12 @@ Three things push back on that, none of which replaces a real backup:
   the browser on desktop. In mobile Safari an installed web app is exempt
   from the roughly seven-day purge of script-written storage, which is the
   single biggest risk to a board you do not open every week.
+- **Auto-save to a file.** On Chrome and Edge on the desktop, pick a file once
+  and Listboard writes the whole board to it whenever anything changes. Point
+  it at a synced folder and there is an off-machine copy another device can
+  import from. Clearing site data drops the permission, but not the file.
+  Firefox and every browser on iOS have no such API, so the panel does not
+  appear there and manual export stays the way across.
 - **A backup that says its age.** Settings shows how long it has been since
   the last export, and says so loudly once it is over a fortnight.
 
