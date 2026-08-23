@@ -165,6 +165,12 @@ h1, .sub { display: none; }
 .lede { color: var(--muted); font-size: .9rem; margin: 0 0 .8rem; max-width: 75ch; }
 .hint { color: var(--muted); font-size: .85rem; }
 .hint b.warn { color: var(--bad); }
+/* A backup that is overdue should look overdue, not read like a caption. */
+.warn-line {
+  padding: .5rem .65rem; border-radius: 7px;
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
+}
 .row { display: flex; gap: .4rem; align-items: center; }
 .row.wrap { flex-wrap: wrap; }
 .twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem; }

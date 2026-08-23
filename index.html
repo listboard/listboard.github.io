@@ -11,13 +11,14 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2">
 <link rel="icon" href="favicon.ico?v=2" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2">
+<link rel="manifest" href="manifest.webmanifest?v=1">
 <meta name="description" content="A kanban task board for your projects. Notes, titles, tags, comments and drag-and-drop between New, In progress and Closed. Everything is stored in this browser.">
 <meta name="theme-color" content="#131211" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=5">
+<link rel="stylesheet" href="css/style.css?v=6">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -212,6 +213,10 @@
     <section class="panel">
       <div class="mod-h">Storage</div>
       <div id="storageStatus" class="hint"></div>
+      <div class="row wrap" style="margin-top:.7rem">
+        <button class="mini" id="btnPersist">Ask to keep this data</button>
+      </div>
+      <div id="persistStatus" class="hint" style="margin-top:.5rem"></div>
     </section>
   </div>
 
@@ -223,6 +228,7 @@
       board out; import merges a file back in without deleting anything that is
       already here.
     </p>
+    <div id="backupAge" class="hint" style="margin-bottom:.7rem"></div>
     <div class="row wrap">
       <button id="btnExport">Export backup</button>
       <button id="btnImport">Import backup</button>
@@ -285,7 +291,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=6"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->

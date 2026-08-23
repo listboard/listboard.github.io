@@ -46,6 +46,13 @@ SIZES = {
     "assets/icon-192.png": 192,
     "assets/apple-touch-icon.png": 180,
 }
+
+# A maskable icon is cropped to whatever shape the platform fancies, and only
+# the middle 80% is guaranteed to survive. The normal mark runs nearly edge to
+# edge, so its outer lanes would be shaved off; this one is drawn smaller on a
+# full-bleed tile instead.
+MASKABLE = ("assets/icon-512-maskable.png", 512)
+MASKABLE_SAFE = 0.78
 ICO_SIZES = [16, 32, 48]
 
 # Supersample, then downscale: Pillow has no anti-aliased shape drawing, so
@@ -103,6 +110,15 @@ def draw_mark(px, tile=True):
     return img.resize((px, px), Image.LANCZOS)
 
 
+def draw_maskable(px):
+    """The mark shrunk into the safe zone, on a tile that fills the canvas."""
+    img = Image.new("RGBA", (px, px), BG)
+    inner = draw_mark(int(px * MASKABLE_SAFE), tile=False)
+    off = (px - inner.size[0]) // 2
+    img.paste(inner, (off, off), inner)
+    return img
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.makedirs(os.path.join(root, "assets"), exist_ok=True)
@@ -111,6 +127,10 @@ def main():
         path = os.path.join(root, name)
         draw_mark(px).save(path)
         print("wrote {} ({}x{})".format(name, px, px))
+
+    name, px = MASKABLE
+    draw_maskable(px).save(os.path.join(root, name))
+    print("wrote {} ({}x{}, maskable)".format(name, px, px))
 
     # The .ico is drawn at each size rather than downscaled from one, so the
     # 16px copy keeps its lanes instead of turning to mush. Pillow drops any
