@@ -26,6 +26,13 @@ to sign up for.
 - **Bulk moves.** Shift-click (or ctrl/cmd-click) cards to select several,
   then send the whole group to a lane, archive it, or drag any one card and
   the rest come with it. The Closed lane also has an **Archive all** button.
+- **Your own lanes.** New, In progress and Closed ship with every board and
+  cannot be removed, though they can be renamed and recoloured. Add your own
+  in Settings for anything else: a Backlog in front, a Blocked in the middle,
+  a Cancelled at the end. Lanes travel with an export, so a backup restores
+  the board you actually had.
+- **Example tasks.** Settings can fill a sample project with tasks spread
+  across the lanes, to see how the board behaves. Removed again in one click.
 - **Comments.** Every task keeps a running thread of comments, plus a history
   of when it was created, moved, archived and commented on.
 - **An archive, not a bin.** Archiving is how a task leaves a board. It keeps
