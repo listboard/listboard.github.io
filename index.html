@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=10">
+<link rel="stylesheet" href="css/style.css?v=11">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -367,6 +367,21 @@
     <div id="ioStatus" class="hint" style="margin-top:.6rem"></div>
   </section>
 
+  <section class="panel" id="autosavePanel" hidden>
+    <div class="mod-h">Auto-save to a file <small>this browser only</small></div>
+    <p class="lede">
+      Pick a file once and Listboard writes the whole board to it whenever
+      anything changes. Point it at a synced folder and you get an off-machine
+      copy for free, which another device can import from.
+    </p>
+    <div class="row wrap">
+      <button id="btnAutosavePick">Choose a file...</button>
+      <button class="mini" id="btnAutosaveNow" hidden>Save now</button>
+      <button class="mini danger" id="btnAutosaveStop" hidden>Stop auto-saving</button>
+    </div>
+    <div id="autosaveStatus" class="hint" style="margin-top:.6rem"></div>
+  </section>
+
   <section class="panel">
     <div class="mod-h">The archive <small id="archiveCount"></small></div>
     <p class="lede">
@@ -412,7 +427,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=10"></script>
+<script src="js/app.js?v=11"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->

@@ -229,6 +229,9 @@ function save() {
     if (!warnedStorage) { warnedStorage = true; toast('This browser is not saving your tasks. See Settings.'); }
   }
   renderStorageStatus();
+  /* A change worth storing is a change worth writing out. Debounced, so a
+     drag does not thrash the disk. */
+  autosaveSchedule();
   return ok;
 }
 function saveUI() { storageSet(KEY_UI, JSON.stringify(ui)); }
@@ -2345,6 +2348,176 @@ function maybeNagBackup() {
     'Back up', function () { goTab('settings'); exportData(); });
 }
 
+/* ── Auto-save to a file ──────────────────────────────────────────────────
+   The File System Access API hands back a handle to a file the user picked.
+   The handle is structured-cloneable, so it can live in IndexedDB and outlast
+   a reload, and Chrome can grant it permission for every visit. After one
+   dialog the board writes itself to that file whenever it changes.
+
+   Be honest about the limit: clearing site data takes the handle with it, the
+   same as everything else. What it does not take is the file, which is the
+   whole point. Point it at a synced folder and there is a copy off this
+   machine that survives the browser entirely.
+
+   Chromium desktop only. Firefox and every browser on iOS have no such API,
+   so the panel simply never appears there and manual export stays the way. */
+
+var IDB_NAME = 'listboard';
+var IDB_STORE = 'kv';
+var IDB_HANDLE_KEY = 'autosave-handle';
+var AUTOSAVE_DEBOUNCE = 1500;
+
+function autosaveSupported() {
+  return !!(window.showSaveFilePicker && window.indexedDB);
+}
+
+function idb() {
+  return new Promise(function (resolve, reject) {
+    var req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = function () {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+}
+
+function idbDo(mode, fn) {
+  return idb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(IDB_STORE, mode);
+      var req = fn(tx.objectStore(IDB_STORE));
+      tx.oncomplete = function () { resolve(req && req.result); };
+      tx.onerror = function () { reject(tx.error); };
+    });
+  });
+}
+
+var autosave = { handle: null, name: '', at: null, error: '', timer: null, busy: false };
+
+function autosaveLoad() {
+  if (!autosaveSupported()) return Promise.resolve();
+  return idbDo('readonly', function (st) { return st.get(IDB_HANDLE_KEY); })
+    .then(function (h) {
+      if (!h) return;
+      autosave.handle = h;
+      autosave.name = h.name || 'a file';
+      /* queryPermission never prompts. Asking for permission needs a gesture,
+         so a lapsed grant waits for the Reconnect button rather than nagging
+         on load. */
+      return h.queryPermission({ mode: 'readwrite' }).then(function (state) {
+        if (state !== 'granted') autosave.error = 'needs-permission';
+      });
+    })
+    .catch(function () { /* no handle, or storage refused: manual export stands */ })
+    .then(renderAutosave);
+}
+
+function autosavePick() {
+  if (!autosaveSupported()) return;
+  window.showSaveFilePicker({
+    suggestedName: 'listboard.json',
+    types: [{ description: 'Listboard backup', accept: { 'application/json': ['.json'] } }]
+  }).then(function (h) {
+    autosave.handle = h;
+    autosave.name = h.name || 'a file';
+    autosave.error = '';
+    return idbDo('readwrite', function (st) { return st.put(h, IDB_HANDLE_KEY); })
+      .then(function () { return autosaveWrite(true); });
+  }).catch(function (err) {
+    /* Cancelling the dialog is not a failure. */
+    if (err && err.name === 'AbortError') return;
+    autosave.error = (err && err.message) || 'could not use that file';
+    renderAutosave();
+  });
+}
+
+function autosaveStop() {
+  autosave.handle = null; autosave.name = ''; autosave.at = null; autosave.error = '';
+  clearTimeout(autosave.timer);
+  idbDo('readwrite', function (st) { return st.delete(IDB_HANDLE_KEY); })
+    .catch(function () {})
+    .then(renderAutosave);
+}
+
+/* Writes the same payload the export button produces, so the file is a normal
+   backup that Import already understands. */
+function autosaveWrite(loud) {
+  if (!autosave.handle || autosave.busy) return Promise.resolve();
+  autosave.busy = true;
+  var h = autosave.handle;
+  return h.queryPermission({ mode: 'readwrite' }).then(function (state) {
+    if (state !== 'granted') {
+      autosave.error = 'needs-permission';
+      throw new Error('permission');
+    }
+    return h.createWritable();
+  }).then(function (w) {
+    return w.write(JSON.stringify(backupPayload(), null, 2)).then(function () { return w.close(); });
+  }).then(function () {
+    autosave.at = new Date();
+    autosave.error = '';
+    /* An automatic write is a real backup, so the age line and the reminder
+       both count it. Otherwise the app would nag while dutifully saving. */
+    storageSet(KEY_LAST_EXPORT, autosave.at.toISOString());
+    renderBackupAge();
+    if (loud) toast('Auto-saving to ' + autosave.name);
+  }).catch(function (err) {
+    if (!autosave.error) autosave.error = (err && err.message) || 'write failed';
+  }).then(function () {
+    autosave.busy = false;
+    renderAutosave();
+  });
+}
+
+/* Called on every save(). Debounced, because dragging a card fires several. */
+function autosaveSchedule() {
+  if (!autosave.handle) return;
+  clearTimeout(autosave.timer);
+  autosave.timer = setTimeout(function () { autosaveWrite(false); }, AUTOSAVE_DEBOUNCE);
+}
+
+function autosaveReconnect() {
+  if (!autosave.handle) return;
+  autosave.handle.requestPermission({ mode: 'readwrite' }).then(function (state) {
+    if (state === 'granted') { autosave.error = ''; return autosaveWrite(true); }
+    autosave.error = 'needs-permission';
+    renderAutosave();
+  }).catch(function () { renderAutosave(); });
+}
+
+function renderAutosave() {
+  var panel = $('#autosavePanel');
+  if (!panel) return;
+  if (!autosaveSupported()) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  var on = !!autosave.handle;
+  $('#btnAutosavePick').textContent = on ? 'Choose a different file...' : 'Choose a file...';
+  $('#btnAutosaveNow').hidden = !on;
+  $('#btnAutosaveStop').hidden = !on;
+
+  var el = $('#autosaveStatus');
+  if (!on) {
+    el.innerHTML = 'Not set up. Nothing is written anywhere until you pick a file.';
+    return;
+  }
+  if (autosave.error === 'needs-permission') {
+    el.innerHTML = '<b class="warn">This browser has stopped allowing writes to ' +
+      esc(autosave.name) + '.</b> Nothing is being saved to it. ' +
+      '<button class="mini" id="btnAutosaveReconnect">Reconnect</button>';
+    $('#btnAutosaveReconnect').addEventListener('click', autosaveReconnect);
+    return;
+  }
+  if (autosave.error) {
+    el.innerHTML = '<b class="warn">' + esc(autosave.name) + ' could not be written:</b> ' +
+      esc(autosave.error);
+    return;
+  }
+  el.textContent = 'Saving to ' + autosave.name +
+    (autosave.at ? ', last written ' + fmtWhen(autosave.at.toISOString()) : ', not written yet') + '.';
+}
+
 function stamp(d) {
   function p(n) { return (n < 10 ? '0' : '') + n; }
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
@@ -2375,17 +2548,23 @@ function downloadFile(text, name) {
   }, 1000);
 }
 
-function exportData() {
-  var now = new Date();
-  var payload = {
+/* One shape for every backup, so a file written automatically is the same
+   thing Import already reads. */
+function backupPayload() {
+  return {
     app: 'listboard',
     version: SCHEMA,
-    exported: now.toISOString(),
+    exported: nowISO(),
     theme: document.documentElement.className,
     statuses: data.statuses,
     projects: data.projects,
     tasks: data.tasks
   };
+}
+
+function exportData() {
+  var now = new Date();
+  var payload = backupPayload();
   /* Every export keeps its own name, so backups accumulate instead of the
      browser silently appending "(1)" and leaving you to guess which is newest. */
   var name = 'listboard-' + stamp(now) + '.json';
@@ -2927,6 +3106,11 @@ function init() {
   });
 
   $('#btnPersist').addEventListener('click', askPersist);
+  $('#btnAutosavePick').addEventListener('click', autosavePick);
+  $('#btnAutosaveNow').addEventListener('click', function () { autosaveWrite(true); });
+  $('#btnAutosaveStop').addEventListener('click', autosaveStop);
+  renderAutosave();
+  autosaveLoad();
   /* About links through to Settings for the things it only describes. */
   $('#tab-about').addEventListener('click', function (e) {
     var b = e.target.closest('[data-goto]');
