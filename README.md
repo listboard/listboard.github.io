@@ -15,6 +15,11 @@ Live at **https://listboard.github.io**
 - **Three lanes.** New → In progress → Closed, with drag-and-drop between them
   and reordering inside them. Dragging works with a mouse and with a finger
   (long press to pick a card up).
+- **Drop things in.** Drag text, a link, an image or a file from anywhere
+  onto a lane and it becomes a task there. Text becomes the note (with any
+  `#tags` picked out), a link or image becomes its URL, and the link text or
+  image alt text becomes the title. Several links at once become several
+  tasks.
 - **Bulk moves.** Shift-click (or ctrl/cmd-click) cards to select several,
   then send the whole group to a lane, archive it, or drag any one card and
   the rest come with it. The Closed lane also has an **Archive all** button.
