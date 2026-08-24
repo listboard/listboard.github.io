@@ -56,6 +56,14 @@ to sign up for.
   Every chip counts what it would actually show if clicked, with the other
   filters left as they are, and **No project** and **Untagged** pick out the
   tasks that have neither.
+- **Minus excludes.** In either search box, a leading minus takes something
+  away rather than adding to it: `-#chore` drops everything tagged chore,
+  `-@work` drops that project, and a bare `-draft` drops anything whose text
+  mentions it. They stack, they combine with the pills, and on the List page
+  they are the one sigil the box understands, since a positive `#tag` there is
+  already a chip. Autocomplete offers names after a minus too. As everywhere
+  else in the app the minus only counts after a space or at the very start, so
+  `well-known` and `2026-08-24` are still plain text.
 - **Backups.** Export the whole board as one JSON file, named
   `listboard-YYYY-MM-DD-HHMMSS.json`. Import merges a file back in and never
   deletes; drop the file onto Settings, or use the picker. On iPad and iPhone

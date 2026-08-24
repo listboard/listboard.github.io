@@ -121,7 +121,7 @@
   </section>
 
   <section class="panel filters board-filters">
-    <input type="search" id="boardSearch" placeholder="Filter this board: text, #tag or @project..." autocomplete="off">
+    <input type="search" id="boardSearch" placeholder="Filter this board: text, #tag, @project, or -minus to exclude..." autocomplete="off">
     <div class="filter-row" id="boardProjRow">
       <div class="filter-label">Projects</div>
       <div class="chips" id="boardProjChips"></div>
@@ -151,7 +151,7 @@
   </div>
 
   <section class="panel filters">
-    <input type="search" id="listSearch" placeholder="Search titles, notes, comments and tags..." autocomplete="off">
+    <input type="search" id="listSearch" placeholder="Search titles, notes, comments and tags. -term, -#tag or -@project excludes..." autocomplete="off">
     <div class="filter-row">
       <div class="filter-label">Project</div>
       <div class="chips" id="listProjChips"></div>
@@ -240,6 +240,8 @@
         elsewhere. Both autocomplete.</li>
       <li><b>Move it.</b> Drag between lanes. On touch, hold a moment first.
         Shift-click to move several at once.</li>
+      <li><b>Find it.</b> Search on the Board or the List. A leading minus takes
+        something away: <code>-#chore</code>, <code>-@work</code>, <code>-draft</code>.</li>
       <li><b>Open it.</b> Click a card for notes, due date, priority and comments.</li>
       <li><b>Finish it.</b> Archive rather than delete. Reopen any time from
         <b>List &rarr; Status &rarr; Archived</b>.</li>
@@ -427,7 +429,7 @@
 
 <div id="toast"></div>
 
-<script src="js/app.js?v=16"></script>
+<script src="js/app.js?v=17"></script>
 
 <!-- Default Statcounter code for Listboard
 https://listboard.github.io/ -->
