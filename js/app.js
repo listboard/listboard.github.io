@@ -614,18 +614,27 @@ var ac = { field: null, menu: null, items: [], idx: -1, from: 0, to: 0, sigil: '
 
 /* The token being typed, if the caret is sitting at the end of one. Requires
    whitespace or the very start before the sigil, exactly like the parser, so
-   an email address never opens a project menu. */
+   an email address never opens a project menu.
+
+   A leading minus is allowed to sit between the whitespace and the sigil,
+   because an exclusion deserves the same help spelling a name as an inclusion.
+   Only the sigil and what follows is replaced, so the minus stays where it was
+   typed. Which of the two a field accepts depends on what it does with them:
+   the quick-add box has no exclusions, the List box has nothing but. */
 function acTokenAt(field) {
   if (typeof field.selectionStart !== 'number') return null;
   var caret = field.selectionStart;
   if (caret !== field.selectionEnd) return null;
   var before = field.value.slice(0, caret);
-  var m = /(^|\s)([#@])([A-Za-z0-9][\w-]*|)$/.exec(before);
+  var m = /(^|\s)(-?)([#@])([A-Za-z0-9][\w-]*|)$/.exec(before);
   if (!m) return null;
+  var mode = field.getAttribute('data-ac-minus') || 'no';
+  if (m[2] && mode === 'no') return null;
+  if (!m[2] && mode === 'only') return null;
   return {
-    sigil: m[2],
-    prefix: m[3],
-    from: caret - m[3].length - 1,   /* the sigil itself */
+    sigil: m[3],
+    prefix: m[4],
+    from: caret - m[4].length - 1,   /* the sigil itself */
     to: caret
   };
 }
@@ -761,9 +770,10 @@ function acKey(e) {
 }
 
 /* Capture, so this runs before the field's own Enter handling. */
-function wireAutocomplete(sel) {
+function wireAutocomplete(sel, minus) {
   var field = $(sel);
   if (!field) return;
+  field.setAttribute('data-ac-minus', minus || 'no');
   field.addEventListener('keydown', acKey, true);
   field.addEventListener('input', function () { acUpdate(field); });
   field.addEventListener('click', function () { acUpdate(field); });
@@ -771,15 +781,26 @@ function wireAutocomplete(sel) {
 }
 
 /* ── Filters ──────────────────────────────────────────────────────────── */
-var boardFilter = { q: '', tag: '', project: null };
-var listFilter = { q: '', project: '', status: '', tag: '' };
+var boardFilter = { q: '', tag: '', project: null, not: noExclusions() };
+var listFilter = blankListFilter();
+
+/* The List page has three chips and a box, and three separate places reset it,
+   so the shape lives in one function. Anything that rebuilds the object from
+   scratch gets the exclusions cleared with everything else, which is what a
+   reset should do. */
+function blankListFilter(over) {
+  var f = { q: '', project: '', status: '', tag: '', not: noExclusions() };
+  if (over) for (var k in over) if (over.hasOwnProperty(k)) f[k] = over[k];
+  return f;
+}
 
 function textOf(t) {
   return [t.title, t.note, t.tags.join(' '), projectName(t.project),
     t.comments.map(function (c) { return c.body; }).join(' ')].join(' ').toLowerCase();
 }
 function boardFiltered() {
-  return !!(boardFilter.q || boardFilter.tag || boardFilter.project !== null);
+  return !!(boardFilter.q || boardFilter.tag || boardFilter.project !== null ||
+    hasExclusions(boardFilter.not));
 }
 
 function matchesBoard(t) {
@@ -788,7 +809,64 @@ function matchesBoard(t) {
   if (boardFilter.project !== null && t.project !== boardFilter.project) return false;
   if (boardFilter.tag && t.tags.indexOf(boardFilter.tag) < 0) return false;
   if (boardFilter.q && textOf(t).indexOf(boardFilter.q) < 0) return false;
+  if (excluded(t, boardFilter.not)) return false;
   return true;
+}
+
+/* ── Exclusions ───────────────────────────────────────────────────────────
+   A leading minus takes something away, in either search box: `-#chore` drops
+   everything tagged chore, `-@listboard` drops that project, and a bare
+   `-draft` drops anything whose text mentions it.
+
+   Exclusions are stripped before the positive sigils are read, and, like every
+   other sigil in the app, a minus only counts after whitespace or at the very
+   start. That is what keeps `well-known` and `2026-08-24` out of it.
+
+   They stack: several of each is an and, so a task is out if it matches any
+   one of them. */
+function noExclusions() { return { terms: [], tags: [], projects: [] }; }
+
+function hasExclusions(not) {
+  return !!(not && (not.terms.length || not.tags.length || not.projects.length));
+}
+
+function addOnce(arr, v) { if (v && arr.indexOf(v) < 0) arr.push(v); }
+
+function parseExclusions(raw) {
+  var not = noExclusions();
+  var rest = String(raw)
+    .replace(/(^|\s)-@([A-Za-z0-9][\w-]*)/g, function (m, pre, name) {
+      /* An unknown name excludes nothing, unlike the positive @name, which
+         shows an empty board. There is no honest board to show for "everything
+         except a project that does not exist" other than everything. */
+      var hit = matchProject(name);
+      if (hit) addOnce(not.projects, hit.id);
+      return pre;
+    })
+    .replace(/(^|\s)-#([A-Za-z0-9][\w-]*)/g, function (m, pre, t) {
+      addOnce(not.tags, cleanTag(t));
+      return pre;
+    })
+    .replace(/(^|\s)-(\S+)/g, function (m, pre, term) {
+      addOnce(not.terms, term.toLowerCase());
+      return pre;
+    })
+    .replace(/\s{2,}/g, ' ').trim();
+  return { rest: rest, not: not };
+}
+
+/* Read against the same text the positive search reads, so "matches" and
+   "does not match" always mean the same thing. */
+function excluded(t, not) {
+  if (!hasExclusions(not)) return false;
+  if (not.projects.indexOf(t.project) >= 0) return true;
+  var i;
+  for (i = 0; i < not.tags.length; i++) if (t.tags.indexOf(not.tags[i]) >= 0) return true;
+  if (not.terms.length) {
+    var text = textOf(t);
+    for (i = 0; i < not.terms.length; i++) if (text.indexOf(not.terms[i]) >= 0) return true;
+  }
+  return false;
 }
 
 /* No project can ever have this id, so filtering to it shows an empty board.
@@ -805,7 +883,11 @@ var NO_SUCH_PROJECT = '__no-such-project__';
    search for "@listboard" and match nothing. */
 function applyBoardSearch(raw) {
   var tag = '', proj = '';
-  var rest = String(raw)
+  /* Exclusions come off first, so the positive passes below never see the
+     @name in a -@name. */
+  var cut = parseExclusions(raw);
+  boardFilter.not = cut.not;
+  var rest = cut.rest
     .replace(/(^|\s)@([A-Za-z0-9][\w-]*)/g, function (m, pre, name) {
       if (!proj) proj = name;
       return pre;
@@ -853,6 +935,7 @@ function matchesListWith(t, f) {
   } else if (f.tag && t.tags.indexOf(f.tag) < 0) return false;
 
   if (f.q && textOf(t).indexOf(f.q) < 0) return false;
+  if (excluded(t, f.not)) return false;
   return true;
 }
 
@@ -862,7 +945,7 @@ function matchesList(t) { return matchesListWith(t, listFilter); }
    filter left as it is. That is what makes a count trustworthy: a chip reading
    3 means clicking it shows 3, not 3 before the search box has its say. */
 function facetCount(key, value) {
-  var f = { q: listFilter.q, project: listFilter.project, status: listFilter.status, tag: listFilter.tag };
+  var f = blankListFilter(listFilter);
   f[key] = value;
   var n = 0;
   data.tasks.forEach(function (t) { if (matchesListWith(t, f)) n++; });
@@ -2813,6 +2896,7 @@ function init() {
     boardFilter.tag = '';
     boardFilter.project = null;
     boardFilter.q = '';
+    boardFilter.not = noExclusions();
     $('#boardSearch').value = '';
     selection = [];
     renderAll();
@@ -2935,7 +3019,11 @@ function init() {
 
   /* List */
   $('#listSearch').addEventListener('input', function () {
-    listFilter.q = this.value.trim().toLowerCase();
+    /* Only the exclusions are sigils here. A positive #tag or @project is a
+       chip on this page, so typing one stays an ordinary text search. */
+    var cut = parseExclusions(this.value);
+    listFilter.q = cut.rest.toLowerCase();
+    listFilter.not = cut.not;
     renderList();
   });
   $('#tab-list').addEventListener('click', function (e) {
@@ -2953,7 +3041,7 @@ function init() {
     if (row) openTask(row.dataset.id);
   });
   $('#btnClearListFilters').addEventListener('click', function () {
-    listFilter = { q: '', project: '', status: '', tag: '' };
+    listFilter = blankListFilter();
     $('#listSearch').value = '';
     renderList();
   });
@@ -2992,7 +3080,7 @@ function init() {
     if (!b) return;
     var tag = b.closest('[data-tag]').dataset.tag;
     if (b.dataset.tact === 'filter') {
-      listFilter = { q: '', project: '', status: '', tag: tag };
+      listFilter = blankListFilter({ tag: tag });
       $('#listSearch').value = '';
       renderList();
       goTab('list');
@@ -3085,7 +3173,7 @@ function init() {
     archiveMany(closed, 'closed task');
   });
   $('#btnViewArchive').addEventListener('click', function () {
-    listFilter = { q: '', project: '', status: 'archived', tag: '' };
+    listFilter = blankListFilter({ status: 'archived' });
     $('#listSearch').value = '';
     renderList();
     goTab('list');
@@ -3150,7 +3238,8 @@ function init() {
   setTimeout(maybeNagBackup, 1200);
 
   wireAutocomplete('#quickNote');
-  wireAutocomplete('#boardSearch');
+  wireAutocomplete('#boardSearch', 'ok');
+  wireAutocomplete('#listSearch', 'only');
   /* The menu is pinned to the viewport, so anything that moves the field has
      to take it down rather than leave it floating somewhere wrong. */
   window.addEventListener('resize', acClose);
