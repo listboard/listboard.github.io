@@ -2393,7 +2393,7 @@ function idbDo(mode, fn) {
   });
 }
 
-var autosave = { handle: null, name: '', at: null, error: '', timer: null, busy: false };
+var autosave = { handle: null, name: '', at: null, error: '', perm: 'granted', timer: null, busy: false };
 
 function autosaveLoad() {
   if (!autosaveSupported()) return Promise.resolve();
@@ -2402,11 +2402,17 @@ function autosaveLoad() {
       if (!h) return;
       autosave.handle = h;
       autosave.name = h.name || 'a file';
-      /* queryPermission never prompts. Asking for permission needs a gesture,
-         so a lapsed grant waits for the Reconnect button rather than nagging
-         on load. */
+      /* queryPermission never prompts. Asking for permission needs a user
+         gesture, so whatever it reports is recorded and acted on from a
+         button rather than nagged about on load.
+
+         'prompt' here is the ordinary case, not a fault: browsers hand out
+         file-write permission for the session, so a refresh drops back to
+         asking unless the grant was made permanent in the browser's own
+         dialog. 'denied' is the genuine problem. They read very differently
+         and must not share a message. */
       return h.queryPermission({ mode: 'readwrite' }).then(function (state) {
-        if (state !== 'granted') autosave.error = 'needs-permission';
+        autosave.perm = state;
       });
     })
     .catch(function () { /* no handle, or storage refused: manual export stands */ })
@@ -2435,7 +2441,8 @@ function autosavePick() {
 }
 
 function autosaveStop() {
-  autosave.handle = null; autosave.name = ''; autosave.at = null; autosave.error = '';
+  autosave.handle = null; autosave.name = ''; autosave.at = null;
+  autosave.error = ''; autosave.perm = 'granted';
   clearTimeout(autosave.timer);
   idbDo('readwrite', function (st) { return st.delete(IDB_HANDLE_KEY); })
     .catch(function () {})
@@ -2449,10 +2456,8 @@ function autosaveWrite(loud) {
   autosave.busy = true;
   var h = autosave.handle;
   return h.queryPermission({ mode: 'readwrite' }).then(function (state) {
-    if (state !== 'granted') {
-      autosave.error = 'needs-permission';
-      throw new Error('permission');
-    }
+    autosave.perm = state;
+    if (state !== 'granted') throw new Error('permission');
     return h.createWritable();
   }).then(function (w) {
     return w.write(JSON.stringify(backupPayload(), null, 2)).then(function () { return w.close(); });
@@ -2482,8 +2487,8 @@ function autosaveSchedule() {
 function autosaveReconnect() {
   if (!autosave.handle) return;
   autosave.handle.requestPermission({ mode: 'readwrite' }).then(function (state) {
+    autosave.perm = state;
     if (state === 'granted') { autosave.error = ''; return autosaveWrite(true); }
-    autosave.error = 'needs-permission';
     renderAutosave();
   }).catch(function () { renderAutosave(); });
 }
@@ -2504,10 +2509,22 @@ function renderAutosave() {
     el.innerHTML = 'Not set up. Nothing is written anywhere until you pick a file.';
     return;
   }
-  if (autosave.error === 'needs-permission') {
-    el.innerHTML = '<b class="warn">This browser has stopped allowing writes to ' +
-      esc(autosave.name) + '.</b> Nothing is being saved to it. ' +
-      '<button class="mini" id="btnAutosaveReconnect">Reconnect</button>';
+  /* Paused, which is where a refresh normally leaves things. Said plainly,
+     with the way to stop it happening every time. */
+  if (autosave.perm === 'prompt') {
+    el.innerHTML = 'Paused. Browsers allow writing to a file for one visit at a ' +
+      'time, so this asks again after a refresh. ' +
+      '<button class="mini" id="btnAutosaveReconnect">Resume</button>' +
+      '<span class="hint" style="display:block;margin-top:.4rem">Choosing ' +
+      '<b>Allow on every visit</b> in the browser prompt stops it asking again.</span>';
+    $('#btnAutosaveReconnect').addEventListener('click', autosaveReconnect);
+    return;
+  }
+  if (autosave.perm === 'denied') {
+    el.innerHTML = '<b class="warn">This browser is blocking writes to ' +
+      esc(autosave.name) + '.</b> Nothing is being saved to it. Allow file editing ' +
+      'for this site in the browser settings, or pick the file again. ' +
+      '<button class="mini" id="btnAutosaveReconnect">Try again</button>';
     $('#btnAutosaveReconnect').addEventListener('click', autosaveReconnect);
     return;
   }
