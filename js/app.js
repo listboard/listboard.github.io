@@ -1324,7 +1324,7 @@ function renderStorageStatus() {
     lines.push('<b class="warn">This browser is refusing to save.</b> Private windows and blocked site data both do this. Export a backup now, because nothing typed here will survive a reload.');
   } else {
     lines.push('Saving normally. ' + plural(data.tasks.length, 'task') + ' and ' +
-      plural(data.projects.length, 'project') + ', about ' + kb + ' KB under <code>lb-data</code>.');
+      plural(data.projects.length, 'project') + ', about ' + kb + ' KB.');
   }
   if (rescued) {
     lines.push('<b class="warn">Earlier data could not be read</b> and was copied to <code>lb-data-rescued</code> rather than overwritten. It is still in this browser if you want to recover it by hand.');
