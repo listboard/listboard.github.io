@@ -912,8 +912,13 @@ function currentTabName() {
    what we are setting it to. Assigning an unchanged hash fires no hashchange,
    which is exactly how a tab button ends up doing nothing. */
 function goTab(name) {
-  if (location.hash === '#' + name) { route(); return; }
-  location.hash = name;
+  /* Set the hash, then route by hand. Assigning location.hash queues
+     hashchange as a task rather than firing it now, so anything that runs
+     straight after this call would still be looking at the old tab: that is
+     what left n and / focusing a field on a page that was still hidden.
+     route() is idempotent, so the queued hashchange repeating it is harmless. */
+  if (location.hash !== '#' + name) location.hash = name;
+  route();
 }
 
 /* A field on a hidden tab cannot take focus: the browser refuses silently and
@@ -2068,7 +2073,12 @@ function addStatus(label) {
 function deleteStatus(st) {
   if (isBuiltin(st.id)) { toast(st.label + ' ships with every board and cannot be removed'); return; }
   var held = data.tasks.filter(function (t) { return t.status === st.id; });
-  var to = firstStatusId();
+  /* The first lane that will still be there afterwards. firstStatusId() is not
+     good enough: a custom lane can be dragged to the front, and sending its
+     tasks to "the first lane" would then send them to the very lane being
+     removed, stranding them on a status nothing renders. */
+  var left = data.statuses.filter(function (x) { return x.id !== st.id; });
+  var to = left.length ? left[0].id : firstStatusId();
   var msg = held.length
     ? 'Remove the ' + st.label + ' lane? Its ' + plural(held.length, 'task') +
       ' will move to ' + statusLabel(to) + '.'
