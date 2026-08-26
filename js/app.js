@@ -1086,26 +1086,32 @@ function cardHTML(t) {
   if (t.title) h += '<div class="card-title">' + esc(t.title) + '</div>';
   h += '<div class="card-note' + (t.title ? '' : ' solo') + '">' + esc(t.note) + '</div>';
 
-  var foot = '';
-  t.tags.forEach(function (g) { foot += '<span class="tag">' + esc(g) + '</span>'; });
-  if (t.priority === 'high') foot += '<span class="prio prio-high">HIGH</span>';
-  if (t.priority === 'low') foot += '<span class="prio prio-low">LOW</span>';
-  if (foot) foot += '<span class="spacer"></span>';
+  /* Two groups with a spacer between them, so the right-hand one is against
+     the right edge on every card. Built separately rather than appended in a
+     line, because a card with no tags used to skip the spacer and leave the
+     project badge sitting under the note, in a different place on every card
+     down the lane. */
+  var left = '';
+  var right = '';
+  t.tags.forEach(function (g) { left += '<span class="tag">' + esc(g) + '</span>'; });
+  if (t.priority === 'high') left += '<span class="prio prio-high">HIGH</span>';
+  if (t.priority === 'low') left += '<span class="prio prio-low">LOW</span>';
   if (t.due) {
-    foot += '<span class="meta ' + dueClass(t.due) + '" title="Due ' + esc(fmtDate(t.due)) + '">' +
+    right += '<span class="meta ' + dueClass(t.due) + '" title="Due ' + esc(fmtDate(t.due)) + '">' +
       '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>' +
       esc(dueLabel(t.due)) + '</span>';
   }
   if (t.comments.length) {
-    foot += '<span class="meta" title="' + plural(t.comments.length, 'comment') + '">' +
+    right += '<span class="meta" title="' + plural(t.comments.length, 'comment') + '">' +
       '<svg viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg>' +
       t.comments.length + '</span>';
   }
   if (currentProject() === '' && t.project) {
     /* Written the way it is typed, so the badge on a card and the @project you
        would type to file or filter it are visibly the same thing. */
-    foot += projTagHTML(t.project);
+    right += projTagHTML(t.project);
   }
+  var foot = left + (right ? '<span class="spacer"></span>' + right : '');
   if (foot) h += '<div class="card-foot">' + foot + '</div>';
   return h + '</div>';
 }
