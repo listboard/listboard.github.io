@@ -1343,6 +1343,15 @@ function renderList() {
     var sub = t.title ? t.note : '';
     return '<div class="trow' + (t.archived ? ' is-archived' : '') + '" data-id="' + esc(t.id) +
       '" style="--st:' + statusHue(t.status) + '">' +
+      /* Status, project and Reopen share one line across the top of the
+         card, so the body below can use the card's full width. */
+      '<div class="trow-side">' +
+      '<span class="status-badge">' + esc(statusLabel(t.status)) + '</span>' +
+      (t.project ? projTagHTML(t.project) : '') +
+      /* Reopening is the point of an archive, so it is one click from the card
+         rather than buried in the task panel. */
+      (t.archived ? '<button class="mini" data-reopen="' + esc(t.id) + '">Reopen</button>' : '') +
+      '</div>' +
       '<div class="trow-main">' +
       '<div class="trow-title">' + esc(t.title || t.note.split('\n')[0]) + '</div>' +
       (sub ? '<div class="trow-note">' + esc(sub) + '</div>' : '') +
@@ -1351,13 +1360,7 @@ function renderList() {
       (t.due ? '<span class="meta ' + dueClass(t.due) + '">Due ' + esc(dueLabel(t.due)) + '</span>' : '') +
       (t.comments.length ? '<span class="meta">' + plural(t.comments.length, 'comment') + '</span>' : '') +
       '</div></div>' +
-      '<div class="trow-side">' +
-      '<span class="status-badge">' + esc(statusLabel(t.status)) + '</span>' +
-      (t.project ? projTagHTML(t.project) : '') +
-      /* Reopening is the point of an archive, so it is one click from the row
-         rather than buried in the task panel. */
-      (t.archived ? '<button class="mini" data-reopen="' + esc(t.id) + '">Reopen</button>' : '') +
-      '</div></div>';
+      '</div>';
   }).join('');
 }
 

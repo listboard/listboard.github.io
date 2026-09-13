@@ -490,21 +490,32 @@ body.dragging-card, body.dragging-card * {
   -webkit-touch-callout: none !important;
 }
 
-/* ── List rows ─────────────────────────────────────────────────────── */
+/* ── List cards ────────────────────────────────────────────────────── */
+/* The list is a masonry of cards rather than a stack of full-width rows.
+   Each card is only as tall as its own content, and the browser packs them
+   into as many columns as the page is wide enough to hold, so a short task
+   no longer costs a whole row of blank space. */
+#listRows { column-width: 17rem; column-gap: .45rem; }
+#listRows .empty { column-span: all; }
 .trow {
-  display: flex; align-items: flex-start; gap: .7rem;
+  display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top;
+  break-inside: avoid; -webkit-column-break-inside: avoid;
   background: var(--card); border: 1px solid var(--line);
   border-left: 3px solid var(--st); border-radius: 8px;
   padding: .6rem .75rem; margin-bottom: .45rem; cursor: pointer;
 }
 .trow:hover { background: var(--row-hover); border-color: var(--accent); border-left-color: var(--st); }
-.trow-main { flex: 1; min-width: 0; }
+.trow-main { min-width: 0; }
 .trow-title { font-weight: 600; font-size: .92rem; word-break: break-word; }
 .trow-note {
   font-size: .85rem; color: var(--muted); word-break: break-word;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.trow-side { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; gap: .25rem; align-items: flex-end; }
+/* Status, project and Reopen share one line across the top of the card, with
+   the project (or, failing that, Reopen) kept against the right edge. */
+.trow-side { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .35rem; margin-bottom: .35rem; }
+.trow-side .proj-tag, .trow-side .status-badge + .mini { margin-left: auto; }
+.trow .card-foot:empty { display: none; }
 .status-badge {
   font-size: .7rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px;
   border: 1px solid var(--st); color: var(--st); white-space: nowrap;
