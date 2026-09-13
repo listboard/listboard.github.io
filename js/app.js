@@ -1390,21 +1390,107 @@ function renderProjects() {
     $('#projectRows').innerHTML = '<div class="empty">No projects yet. Tasks without one are filed under "No project".</div>';
     return;
   }
-  $('#projectRows').innerHTML = data.projects.map(function (p) {
-    var all = liveTasks().filter(function (t) { return t.project === p.id; });
-    var open = all.filter(function (t) { return !isTerminal(t.status); }).length;
-    var arch = archivedTasks().filter(function (t) { return t.project === p.id; }).length;
-    return '<div class="arow' + (p.archived ? ' archived' : '') + '" data-pid="' + esc(p.id) + '">' +
-      '<span class="arow-name">' + esc(p.name) + (p.archived ? ' <span class="arow-stats">(archived)</span>' : '') + '</span>' +
-      '<span class="arow-stats">' + open + ' open / ' + all.length + ' total' +
-      (arch ? ' · ' + arch + ' archived' : '') + '</span>' +
-      '<span class="arow-acts">' +
-      (p.archived ? '' : '<button class="mini" data-pact="open">Open board</button>') +
-      '<button class="mini" data-pact="rename">Rename</button>' +
-      '<button class="mini" data-pact="archive">' + (p.archived ? 'Unarchive' : 'Archive') + '</button>' +
-      '<button class="mini danger" data-pact="delete">Delete</button>' +
-      '</span></div>';
-  }).join('');
+  $('#projectRows').innerHTML = data.projects.map(projectCardHTML).join('');
+}
+
+/* Everything the card says about a project comes from its live tasks: how
+   they split across the lanes, what is overdue or due this week, which tags
+   the work carries, the next thing due, and when anything last moved. */
+function projectStats(p) {
+  var all = liveTasks().filter(function (t) { return t.project === p.id; });
+  var open = all.filter(function (t) { return !isTerminal(t.status); });
+  var today = todayStr(), week = daysFromToday(7);
+  var lanes = data.statuses.map(function (s) {
+    return { id: s.id, label: s.label, n: all.filter(function (t) { return t.status === s.id; }).length };
+  });
+  var tags = {};
+  all.forEach(function (t) { t.tags.forEach(function (g) { tags[g] = (tags[g] || 0) + 1; }); });
+  var tagList = Object.keys(tags).map(function (g) { return { tag: g, n: tags[g] }; })
+    .sort(function (a, b) { return b.n - a.n || a.tag.localeCompare(b.tag); });
+  var dated = open.filter(function (t) { return t.due; }).sort(function (a, b) { return a.due.localeCompare(b.due); });
+  var last = '';
+  all.forEach(function (t) { if ((t.updated || '') > last) last = t.updated; });
+  return {
+    all: all, open: open.length, lanes: lanes, tags: tagList,
+    overdue: dated.filter(function (t) { return t.due < today; }).length,
+    soon: dated.filter(function (t) { return t.due >= today && t.due <= week; }).length,
+    next: dated[0] || null,
+    archived: archivedTasks().filter(function (t) { return t.project === p.id; }).length,
+    last: last
+  };
+}
+
+function projectCardHTML(p) {
+  var s = projectStats(p);
+  var total = s.all.length;
+  var MAX_TAGS = 8;
+  var out = '<div class="prow' + (p.archived ? ' archived' : '') + '" data-pid="' + esc(p.id) + '">';
+
+  out += '<div class="prow-head"><span class="prow-name">' + esc(p.name) +
+    (p.archived ? ' <span class="prow-muted">(archived)</span>' : '') + '</span>' +
+    '<span class="arow-acts">' +
+    (p.archived ? '' : '<button class="mini" data-pact="open">Open board</button>') +
+    '<button class="mini" data-pact="rename">Rename</button>' +
+    '<button class="mini" data-pact="archive">' + (p.archived ? 'Unarchive' : 'Archive') + '</button>' +
+    '<button class="mini danger" data-pact="delete">Delete</button>' +
+    '</span></div>';
+
+  if (!total) {
+    out += '<div class="prow-muted">No tasks yet' + (s.archived ? ', ' + plural(s.archived, 'task') + ' archived' : '') + '.</div></div>';
+    return out;
+  }
+
+  /* One bar and one pill per lane, in lane colour. Empty lanes stay out of
+     the way so a project with three tasks does not show eight zeros. */
+  out += '<div class="prow-bar">' + s.lanes.filter(function (l) { return l.n; }).map(function (l) {
+    return '<span style="--st:' + statusHue(l.id) + ';flex:' + l.n + '" title="' + esc(l.label) + ': ' + l.n + '"></span>';
+  }).join('') + '</div>';
+  out += '<div class="prow-lanes">' + s.lanes.filter(function (l) { return l.n; }).map(function (l) {
+    return '<span class="status-badge" style="--st:' + statusHue(l.id) + '" data-pact="lane" data-lane="' + esc(l.id) + '" title="Show these on the List">' +
+      esc(l.label) + ' <b>' + l.n + '</b></span>';
+  }).join('') +
+    '<span class="prow-muted prow-total">' + s.open + ' open of ' + total +
+    (s.archived ? ', ' + s.archived + ' archived' : '') + '</span></div>';
+
+  var signals = [];
+  if (s.overdue) signals.push('<span class="meta overdue">' + plural(s.overdue, 'task') + ' overdue</span>');
+  if (s.soon) signals.push('<span class="meta due-soon">' + s.soon + ' due this week</span>');
+  if (s.next) {
+    signals.push('<span class="meta prow-next" data-pact="task" data-tid="' + esc(s.next.id) + '" title="Open this task">Next: ' +
+      esc(s.next.title || s.next.note.split('\n')[0]) + ' <span class="' + dueClass(s.next.due) + '">' + esc(dueLabel(s.next.due)) + '</span></span>');
+  }
+  if (s.last) signals.push('<span class="meta">Last activity ' + esc(agoLabel(s.last)) + '</span>');
+  if (signals.length) out += '<div class="prow-signals">' + signals.join('') + '</div>';
+
+  if (s.tags.length) {
+    out += '<div class="prow-tags">' + s.tags.slice(0, MAX_TAGS).map(function (g) {
+      return '<span class="tag" data-pact="tag" data-tag="' + esc(g.tag) + '" title="Show these on the List">' +
+        esc(g.tag) + ' <b>' + g.n + '</b></span>';
+    }).join('') +
+      (s.tags.length > MAX_TAGS ? '<span class="prow-muted">+' + (s.tags.length - MAX_TAGS) + ' more</span>' : '') +
+      '</div>';
+  }
+  return out + '</div>';
+}
+
+/* YYYY-MM-DD for n days from now, in the same string form due dates use. */
+function daysFromToday(n) {
+  var d = new Date();
+  d.setDate(d.getDate() + n);
+  function p(x) { return (x < 10 ? '0' : '') + x; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+/* "today", "yesterday", "4 days ago", then a plain date once it is old
+   enough that the count stops meaning anything. */
+function agoLabel(iso) {
+  var d = new Date(iso);
+  if (isNaN(d)) return '';
+  var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return days + ' days ago';
+  return fmtDate(iso);
 }
 
 function renderTags() {
@@ -3090,6 +3176,15 @@ function init() {
     var p = projectById(b.closest('[data-pid]').dataset.pid);
     if (!p) return;
     if (b.dataset.pact === 'open') { ui.project = p.id; saveUI(); renderAll(); goTab('board'); }
+    /* The counts on a card are doors into the List, already narrowed to the
+       project and to whichever lane or tag was clicked. */
+    if (b.dataset.pact === 'lane' || b.dataset.pact === 'tag') {
+      listFilter = blankListFilter({ project: p.id, status: b.dataset.lane || '', tag: b.dataset.tag || '' });
+      $('#listSearch').value = '';
+      renderList();
+      goTab('list');
+    }
+    if (b.dataset.pact === 'task') openTask(b.dataset.tid);
     if (b.dataset.pact === 'rename') {
       var name = window.prompt('Rename project', p.name);
       if (name && name.trim()) { p.name = name.trim(); save(); renderAll(); }

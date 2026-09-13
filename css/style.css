@@ -538,6 +538,37 @@ body.dragging-card, body.dragging-card * {
   padding: 2rem 1rem; border: 1px dashed var(--line); border-radius: 10px;
 }
 
+/* ── Project cards ─────────────────────────────────────────────────── */
+/* Same masonry as the List, a little wider because a card carries a bar,
+   a row of lane pills, a line of signals and a row of tags. */
+#projectRows { column-width: 24rem; column-gap: .45rem; }
+.prow-signals { row-gap: .15rem; }
+#projectRows .empty { column-span: all; }
+.prow {
+  display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top;
+  break-inside: avoid; -webkit-column-break-inside: avoid;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: .6rem .75rem; margin-bottom: .45rem;
+}
+.prow.archived { opacity: .6; }
+.prow-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.prow-name { font-weight: 600; font-size: .95rem; flex: 1; min-width: 8rem; word-break: break-word; }
+.prow-muted { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prow-total { margin-left: auto; }
+/* One bar, split in proportion across the lanes that have anything in them. */
+.prow-bar { display: flex; height: 5px; border-radius: 999px; overflow: hidden; gap: 2px; margin: .55rem 0 .45rem; }
+.prow-bar span { background: var(--st); min-width: 4px; }
+.prow-lanes, .prow-signals, .prow-tags { display: flex; align-items: center; gap: .3rem .4rem; flex-wrap: wrap; }
+.prow-signals { margin-top: .45rem; }
+.prow-tags { margin-top: .45rem; }
+.prow-lanes .status-badge, .prow-tags .tag { cursor: pointer; }
+.prow-lanes .status-badge:hover, .prow-tags .tag:hover { filter: brightness(1.15); }
+.prow-lanes .status-badge b, .prow-tags .tag b { font-weight: 700; opacity: .8; }
+.prow-next { cursor: pointer; color: var(--ink); }
+.prow-next:hover { text-decoration: underline; }
+.prow-next .overdue { color: var(--bad); font-weight: 600; }
+.prow-next .due-soon { color: var(--accent); font-weight: 600; }
+
 /* ── Projects and tags admin rows ──────────────────────────────────── */
 .arow {
   display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
