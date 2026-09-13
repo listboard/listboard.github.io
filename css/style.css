@@ -516,6 +516,13 @@ body.dragging-card, body.dragging-card * {
 .trow-side { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .35rem; margin-bottom: .35rem; }
 .trow-side .proj-tag, .trow-side .status-badge + .mini { margin-left: auto; }
 .trow .card-foot:empty { display: none; }
+/* The card the archive toast's View button lands on: a short pulse of the
+   accent so it stands out from its neighbours, then back to normal. */
+.trow.flash { animation: trow-flash 1.6s ease-out; }
+@keyframes trow-flash {
+  0%, 40% { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
 .status-badge {
   font-size: .7rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px;
   border: 1px solid var(--st); color: var(--st); white-space: nowrap;

@@ -254,20 +254,25 @@ function cleanTag(s) {
 }
 function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
 
-function toast(msg, actionLabel, action) {
+/* Up to two actions. The second is for the rare toast that offers both a way
+   back (Undo) and a way forward (View), which is what archiving wants. */
+function toast(msg, actionLabel, action, secondLabel, second) {
   var el = $('#toast');
   el.innerHTML = '<span></span>';
   el.firstChild.textContent = msg;
-  if (actionLabel) {
+  function addAction(label, fn) {
+    if (!label) return;
     var b = document.createElement('button');
-    b.textContent = actionLabel;
+    b.textContent = label;
     b.addEventListener('click', function () {
       el.classList.remove('show');
       clearTimeout(toast._t);
-      action();
+      fn();
     });
     el.appendChild(b);
   }
+  addAction(actionLabel, action);
+  addAction(secondLabel, second);
   el.classList.add('show');
   clearTimeout(toast._t);
   toast._t = setTimeout(function () { el.classList.remove('show'); }, actionLabel ? 7000 : 2600);
@@ -471,7 +476,22 @@ function archiveTask(id) {
   renderAll();
   toast('Archived. Find it under List → Status → Archived.', 'Undo', function () {
     reopenTask(id, true);
-  });
+  }, 'View', function () { showInArchive(id); });
+}
+
+/* Opens the List on the archive and lands on one task: the filter is set to
+   Archived, the tab switched, and the card scrolled into view with a short
+   flash so the eye finds it among the rest. */
+function showInArchive(id) {
+  listFilter = blankListFilter({ status: 'archived' });
+  $('#listSearch').value = '';
+  renderList();
+  goTab('list');
+  var card = $('#listRows .trow[data-id="' + id + '"]');
+  if (!card) return;
+  card.classList.add('flash');
+  card.addEventListener('animationend', function () { card.classList.remove('flash'); }, { once: true });
+  if (card.scrollIntoView) card.scrollIntoView({ block: 'center' });
 }
 
 /* Archives a batch behind a single undo, so clearing a lane is one action to
@@ -497,7 +517,7 @@ function archiveMany(tasks, what) {
     save();
     renderAll();
     toast('Put back');
-  });
+  }, 'View', function () { showInArchive(); });
   return hit.length;
 }
 
