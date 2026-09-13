@@ -490,21 +490,39 @@ body.dragging-card, body.dragging-card * {
   -webkit-touch-callout: none !important;
 }
 
-/* ── List rows ─────────────────────────────────────────────────────── */
+/* ── List cards ────────────────────────────────────────────────────── */
+/* The list is a masonry of cards rather than a stack of full-width rows.
+   Each card is only as tall as its own content, and the browser packs them
+   into as many columns as the page is wide enough to hold, so a short task
+   no longer costs a whole row of blank space. */
+#listRows { column-width: 17rem; column-gap: .45rem; }
+#listRows .empty { column-span: all; }
 .trow {
-  display: flex; align-items: flex-start; gap: .7rem;
+  display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top;
+  break-inside: avoid; -webkit-column-break-inside: avoid;
   background: var(--card); border: 1px solid var(--line);
   border-left: 3px solid var(--st); border-radius: 8px;
   padding: .6rem .75rem; margin-bottom: .45rem; cursor: pointer;
 }
 .trow:hover { background: var(--row-hover); border-color: var(--accent); border-left-color: var(--st); }
-.trow-main { flex: 1; min-width: 0; }
+.trow-main { min-width: 0; }
 .trow-title { font-weight: 600; font-size: .92rem; word-break: break-word; }
 .trow-note {
   font-size: .85rem; color: var(--muted); word-break: break-word;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.trow-side { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; gap: .25rem; align-items: flex-end; }
+/* Status, project and Reopen share one line across the top of the card, with
+   the project (or, failing that, Reopen) kept against the right edge. */
+.trow-side { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .35rem; margin-bottom: .35rem; }
+.trow-side .proj-tag, .trow-side .status-badge + .mini { margin-left: auto; }
+.trow .card-foot:empty { display: none; }
+/* The card the archive toast's View button lands on: a short pulse of the
+   accent so it stands out from its neighbours, then back to normal. */
+.trow.flash { animation: trow-flash 1.6s ease-out; }
+@keyframes trow-flash {
+  0%, 40% { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
 .status-badge {
   font-size: .7rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px;
   border: 1px solid var(--st); color: var(--st); white-space: nowrap;
@@ -519,6 +537,37 @@ body.dragging-card, body.dragging-card * {
   color: var(--muted); font-size: .9rem; text-align: center;
   padding: 2rem 1rem; border: 1px dashed var(--line); border-radius: 10px;
 }
+
+/* ── Project cards ─────────────────────────────────────────────────── */
+/* Same masonry as the List, a little wider because a card carries a bar,
+   a row of lane pills, a line of signals and a row of tags. */
+#projectRows { column-width: 24rem; column-gap: .45rem; }
+.prow-signals { row-gap: .15rem; }
+#projectRows .empty { column-span: all; }
+.prow {
+  display: inline-block; width: 100%; box-sizing: border-box; vertical-align: top;
+  break-inside: avoid; -webkit-column-break-inside: avoid;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: .6rem .75rem; margin-bottom: .45rem;
+}
+.prow.archived { opacity: .6; }
+.prow-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.prow-name { font-weight: 600; font-size: .95rem; flex: 1; min-width: 8rem; word-break: break-word; }
+.prow-muted { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prow-total { margin-left: auto; }
+/* One bar, split in proportion across the lanes that have anything in them. */
+.prow-bar { display: flex; height: 5px; border-radius: 999px; overflow: hidden; gap: 2px; margin: .55rem 0 .45rem; }
+.prow-bar span { background: var(--st); min-width: 4px; }
+.prow-lanes, .prow-signals, .prow-tags { display: flex; align-items: center; gap: .3rem .4rem; flex-wrap: wrap; }
+.prow-signals { margin-top: .45rem; }
+.prow-tags { margin-top: .45rem; }
+.prow-lanes .status-badge, .prow-tags .tag { cursor: pointer; }
+.prow-lanes .status-badge:hover, .prow-tags .tag:hover { filter: brightness(1.15); }
+.prow-lanes .status-badge b, .prow-tags .tag b { font-weight: 700; opacity: .8; }
+.prow-next { cursor: pointer; color: var(--ink); }
+.prow-next:hover { text-decoration: underline; }
+.prow-next .overdue { color: var(--bad); font-weight: 600; }
+.prow-next .due-soon { color: var(--accent); font-weight: 600; }
 
 /* ── Projects and tags admin rows ──────────────────────────────────── */
 .arow {
