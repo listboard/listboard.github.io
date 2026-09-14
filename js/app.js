@@ -2822,6 +2822,55 @@ function exportData() {
   $('#ioStatus').textContent = done;
 }
 
+/* Opens the mail client with the whole board as JSON in the body. There is
+   no server to send from, so mailto: is the only route, and the message body
+   is the file: save the text as a .json and Import reads it back. Counts as a
+   backup the same way Export does, since the copy leaves this browser. */
+function emailBackup() {
+  var now = new Date();
+  var name = 'listboard-' + stamp(now) + '.json';
+  var text = JSON.stringify(backupPayload(), null, 2);
+  var body = 'Listboard backup ' + name + '\n' +
+    'Save everything below the line as ' + name + ' and use Import backup to restore it.\n' +
+    '----------------------------------------\n' + text;
+  var href = 'mailto:?subject=' + encodeURIComponent('Listboard backup ' + stamp(now)) +
+    '&body=' + encodeURIComponent(body);
+  /* Past a few hundred kilobytes a mailto: link silently does nothing in
+     most clients, so fall back to the clipboard and say so. */
+  if (href.length > 900000) {
+    copyText(text).then(function () {
+      $('#ioStatus').textContent = 'Too big to email as a link. The JSON is on the clipboard, paste it into a message.';
+    }, function () {
+      $('#ioStatus').textContent = 'Too big to email as a link. Use Export backup and attach the file.';
+    });
+    return;
+  }
+  var a = document.createElement('a');
+  a.href = href;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  storageSet(KEY_LAST_EXPORT, now.toISOString());
+  renderBackupAge();
+  $('#ioStatus').textContent = 'Opened an email with ' + plural(data.tasks.length, 'task') +
+    ' in the body. If nothing opened, this browser has no mail app set up.';
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+  return new Promise(function (resolve, reject) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    if (ok) resolve(); else reject();
+  });
+}
+
 function importData(file) {
   var reader = new FileReader();
   reader.onload = function () {
@@ -2966,13 +3015,9 @@ function autoGrow(el) {
 
 /* ── Wiring ───────────────────────────────────────────────────────────── */
 function init() {
-  /* Seed a first project so an empty install has somewhere obvious to put
-     things. Only ever on a truly empty board, never on a cleared one. */
-  if (!data.projects.length && !data.tasks.length && !storageGet(KEY_DATA)) {
-    data.projects.push({ id: uid(), name: 'General', created: nowISO(), archived: false });
-    ui.project = data.projects[0].id;
-    save(); saveUI();
-  }
+  /* A fresh install starts with no projects at all and the picker on All
+     projects. Tasks file with no project until an @name creates one, so there
+     is nothing to seed. Anyone with projects already keeps their own list. */
 
   setTheme(storageGet(KEY_THEME) === 'light' ? 'light' : 'dark');
 
@@ -3253,6 +3298,7 @@ function init() {
   $('#btnThemeDark').addEventListener('click', function () { setTheme('dark'); });
   $('#btnThemeLight').addEventListener('click', function () { setTheme('light'); });
   $('#btnExport').addEventListener('click', exportData);
+  $('#btnEmail').addEventListener('click', emailBackup);
   $('#btnImport').addEventListener('click', function () { $('#importFile').click(); });
   $('#importFile').addEventListener('change', function () {
     if (this.files && this.files[0]) importData(this.files[0]);
