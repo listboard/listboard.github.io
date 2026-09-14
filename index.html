@@ -347,12 +347,14 @@
     <p class="lede">
       Tasks live only in this browser, so they do not follow you to another
       machine and clearing site data takes them with it. Export writes the whole
-      board out; import merges a file back in without deleting anything that is
-      already here.
+      board out; email opens a message with the same JSON in the body, for a
+      copy that lives somewhere other than this device; import merges a file
+      back in without deleting anything that is already here.
     </p>
     <div id="backupAge" class="hint" style="margin-bottom:.7rem"></div>
     <div class="row wrap">
       <button id="btnExport">Export backup</button>
+      <button id="btnEmail" title="Open an email with the whole board as JSON in the body">Email backup</button>
       <button id="btnImport">Import backup</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
