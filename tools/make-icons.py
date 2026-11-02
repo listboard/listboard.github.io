@@ -44,7 +44,9 @@ CARD_RADIUS = 1.3
 SIZES = {
     "assets/icon-512.png": 512,
     "assets/icon-192.png": 192,
-    "assets/apple-touch-icon.png": 180,
+    # At the site root, not in assets/: some Add to Home Screen paths (Chrome
+    # on iOS among them) skip the link tag and only probe /apple-touch-icon.png.
+    "apple-touch-icon.png": 180,
 }
 
 # A maskable icon is cropped to whatever shape the platform fancies, and only
