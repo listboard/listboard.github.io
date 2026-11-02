@@ -760,6 +760,10 @@ body.dragging-card, body.dragging-card * {
   .tabs .lbl-narrow { display: inline; }
   .tabs button.sheet-open { color: var(--accent); }
   .tabs button.sheet-open svg { stroke: var(--accent); }
+  /* While the sheet is up, More is where you are, so the page underneath
+     stops claiming the highlight. Only one tab is ever lit. */
+  .tabs:has(.sheet-open) button.active:not(.sheet-open) { color: var(--muted); }
+  .tabs:has(.sheet-open) button.active:not(.sheet-open) svg { stroke: currentColor; }
   /* 16px inputs stop iOS Safari auto-zooming on focus. A home screen web app
      never zooms back out, so one small field leaves the page panned and the
      fixed bottom bar pushed off the screen. The classed fields are named
