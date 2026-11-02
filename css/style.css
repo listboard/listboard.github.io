@@ -778,11 +778,14 @@ body.dragging-card, body.dragging-card * {
 }
 
 /* The More sheet: the phone's stand-in for the parts of the rail the
-   bottom bar has no room for. */
+   bottom bar has no room for. It runs to the bottom of the screen and slides
+   under the bar, which sits above it. Stopping at a guessed bar height left
+   a strip of the board showing through whenever the guess was too tall; the
+   bottom padding keeps the last tiles clear of the bar instead. */
 .more-sheet {
   display: none; position: fixed; inset: 0;
-  bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px));
   background: var(--bg); z-index: 80; overflow-y: auto; padding: 1rem;
+  padding-bottom: calc(5.2rem + env(safe-area-inset-bottom, 0px));
 }
 .more-sheet.open { display: block; }
 .more-label {
