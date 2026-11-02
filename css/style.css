@@ -711,6 +711,9 @@ body.dragging-card, body.dragging-card * {
   .panel { padding: .85rem; }
   .filter-label { width: 100%; }
   .board-head { align-items: stretch; }
+  /* Title and task count share a line to save height; each keeps its own
+     size, sitting on a common baseline. A long project name still wraps. */
+  .board-head-main { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: .6rem; }
   .board-head-tools { width: 100%; }
   .proj-picker { flex: 1; max-width: none; }
   .grid2 { grid-template-columns: 1fr; }
