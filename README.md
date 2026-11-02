@@ -91,7 +91,7 @@ Then open http://localhost:8124. The files are:
 | `favicon.ico` | 16/32/48 fallback, because Safari ignores SVG favicons |
 | `assets/icon-512.png` | 512px square for manifests, previews, anywhere else |
 | `assets/icon-192.png` | 192px square |
-| `assets/apple-touch-icon.png` | 180px, for iOS home screens |
+| `apple-touch-icon.png` | 180px, for iOS home screens. Kept at the site root because some home screen paths only probe there |
 | `tools/make-icons.py` | Redraws every raster icon from one geometry, by hand |
 
 ## Where your tasks live
