@@ -757,8 +757,12 @@ body.dragging-card, body.dragging-card * {
   .tabs .lbl-narrow { display: inline; }
   .tabs button.sheet-open { color: var(--accent); }
   .tabs button.sheet-open svg { stroke: var(--accent); }
-  /* 16px inputs stop iOS Safari auto-zooming on focus */
-  input[type=search], input[type=text], input[type=date], textarea, select { font-size: 16px; }
+  /* 16px inputs stop iOS Safari auto-zooming on focus. A home screen web app
+     never zooms back out, so one small field leaves the page panned and the
+     fixed bottom bar pushed off the screen. The classed fields are named
+     here because their own smaller sizes outrank a bare select or input. */
+  input[type=search], input[type=text], input[type=date], textarea, select,
+  .proj-picker, .st-color, .tag-input { font-size: 16px; }
   #toast { left: .7rem; right: .7rem; transform: none; max-width: none;
            bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
 
