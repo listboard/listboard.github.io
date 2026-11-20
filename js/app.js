@@ -988,6 +988,18 @@ function setTheme(mode) {
 /* ── Tabs and routing ─────────────────────────────────────────────────── */
 var TABS = ['board', 'list', 'projects', 'tags', 'about', 'settings'];
 
+/* The rail folds down to its icons. Each tab keeps its title tooltip and its
+   label stays in the accessibility tree, so nothing is lost but the width. */
+function setNavCollapsed(on) {
+  if (on) document.documentElement.setAttribute('data-nav', 'collapsed');
+  else document.documentElement.removeAttribute('data-nav');
+  var t = $('#navToggle');
+  var label = on ? 'Expand sidebar' : 'Collapse sidebar';
+  t.setAttribute('aria-label', label);
+  t.title = label;
+  t.setAttribute('aria-expanded', on ? 'false' : 'true');
+}
+
 function showTab(name) {
   /* A selection belongs to the board you made it on: leaving takes it with
      you, so you never come back to a stale one you have forgotten about. */
@@ -995,7 +1007,7 @@ function showTab(name) {
      bar, so coming back to the board never shows a selection that is gone. */
   if (name !== 'board' && selection.length) { selection = []; renderBoard(); }
   $$('.tabpage').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
-  $$('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+  $$('.tabs button[data-tab]').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
   closeMore();
   window.scrollTo(0, 0);
 }
@@ -3006,7 +3018,7 @@ function init() {
   setTheme(storageGet(KEY_THEME) === 'light' ? 'light' : 'dark');
 
   /* Tabs */
-  $$('.tabs button').forEach(function (b) {
+  $$('.tabs button[data-tab]').forEach(function (b) {
     b.addEventListener('click', function () {
       var name = b.dataset.tab;
       /* On a phone the Settings button is the More tab and opens the sheet
@@ -3023,6 +3035,12 @@ function init() {
   });
   $$('.more-tile').forEach(function (b) {
     b.addEventListener('click', function () { goTab(b.dataset.more); });
+  });
+  setNavCollapsed(!!ui.navCollapsed);
+  $('#navToggle').addEventListener('click', function () {
+    ui.navCollapsed = !ui.navCollapsed;
+    saveUI();
+    setNavCollapsed(ui.navCollapsed);
   });
 
   /* Board */

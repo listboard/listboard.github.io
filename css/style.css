@@ -153,6 +153,36 @@ h1 { margin: 0 0 .25rem; color: var(--accent); letter-spacing: -.01em; }
   color: var(--muted); font-variant-numeric: tabular-nums;
 }
 
+/* Collapse toggle at the right end of the brand row. It is a .tabs button by
+   position only, so it undoes the tab look. */
+.tabs .nav-toggle {
+  width: 32px; height: 32px; padding: 0; margin: 0 0 0 auto; flex-shrink: 0;
+  justify-content: center; border-radius: 6px; color: var(--muted);
+}
+.tabs .nav-toggle:hover { background: var(--tab-hover); color: var(--ink); }
+.tabs .nav-toggle svg { width: 20px; height: 20px; fill: currentColor; stroke: none; }
+.tabs .nav-toggle-chev { transform-origin: 17.8px 31.9px; transition: transform .2s ease; }
+
+/* Collapsed: icons only. The rail is just wide enough for one icon button;
+   the logo gives its place to the toggle, whose chevron turns to point out.
+   Labels are clipped rather than hidden so screen readers still name each
+   tab, and each button's title still shows on hover.
+   The phone's bottom bar has no brand row, so none of this reaches it. */
+@media (min-width: 701px) {
+  .tabs { transition: width .2s ease; }
+  [data-nav="collapsed"] .tabs { width: 56px; }
+  [data-nav="collapsed"] .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  [data-nav="collapsed"] .brand-logo,
+  [data-nav="collapsed"] .brand-name { display: none; }
+  [data-nav="collapsed"] .tabs .nav-toggle { margin: 0; }
+  [data-nav="collapsed"] .nav-toggle-chev { transform: scaleX(-1); }
+  [data-nav="collapsed"] .tabs button[data-tab] { justify-content: center; padding-left: 0; padding-right: 0; }
+  [data-nav="collapsed"] .tabs .tab-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; flex: none;
+  }
+}
+
 /* The rail's brand block replaces the page heading on larger screens */
 h1, .sub { display: none; }
 .tabpage { display: none; }

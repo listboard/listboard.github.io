@@ -23,7 +23,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Listboard">
-<link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/style.css?v=17">
 <script>
   /* Set the theme before first paint so a dark-mode load never flashes white.
      Dark is the default; light is only used if it was explicitly chosen. */
@@ -31,6 +31,12 @@
     var t = null;
     try { t = localStorage.getItem('lb-theme'); } catch (e) {}
     document.documentElement.className = (t === 'light') ? 'light' : 'dark';
+    /* Same for a collapsed rail, so it never paints wide and then snaps shut.
+       A data attribute rather than a class: setTheme rewrites className. */
+    try {
+      var u = JSON.parse(localStorage.getItem('lb-ui') || '{}');
+      if (u && u.navCollapsed) document.documentElement.setAttribute('data-nav', 'collapsed');
+    } catch (e) {}
   })();
 </script>
 </head>
@@ -51,6 +57,9 @@
       </svg>
     </span>
     <span class="brand-name">Listboard</span>
+    <button class="nav-toggle" id="navToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M49.984,56l-35.989,0c-3.309,0 -5.995,-2.686 -5.995,-5.995l0,-36.011c0,-3.308 2.686,-5.995 5.995,-5.995l35.989,0c3.309,0 5.995,2.687 5.995,5.995l0,36.011c0,3.309 -2.686,5.995 -5.995,5.995Zm-25.984,-4.001l0,-39.999l-9.012,0c-1.650,0 -2.989,1.339 -2.989,2.989l0,34.021c0,1.650 1.339,2.989 2.989,2.989l9.012,0Zm24.991,-39.999l-20.991,0l0,39.999l20.991,0c1.650,0 2.989,-1.339 2.989,-2.989l0,-34.021c0,-1.650 -1.339,-2.989 -2.989,-2.989Z"/><path class="nav-toggle-chev" d="M19.999,38.774l-6.828,-6.828l6.828,-6.829l2.829,2.829l-4,4l4,4l-2.829,2.828Z"/></svg>
+    </button>
   </div>
 
   <div class="tab-list">
